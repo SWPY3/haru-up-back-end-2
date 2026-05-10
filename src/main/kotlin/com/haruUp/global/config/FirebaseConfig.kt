@@ -11,18 +11,24 @@ class FirebaseConfig {
 
     @PostConstruct
     fun init(){
-        // Firebase SDK 초기화 로직 추가
-        // 예: FirebaseApp.initializeApp(options)
         if(FirebaseApp.getApps().isNotEmpty()) return
 
-        val serviceAccount = this::class.java.getResourceAsStream("/firebase-service-account.json")
-            ?: throw IllegalStateException("Firebase service account file not found")
+        // 환경변수에서 Firebase JSON 읽기 (Railway 배포용)
+        val firebaseJson = System.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+
+        val credentials = if (!firebaseJson.isNullOrBlank()) {
+            GoogleCredentials.fromStream(firebaseJson.byteInputStream())
+        } else {
+            // 로컬 환경: 파일에서 읽기
+            val serviceAccount = this::class.java.getResourceAsStream("/firebase-service-account.json")
+                ?: throw IllegalStateException("Firebase service account file not found")
+            GoogleCredentials.fromStream(serviceAccount)
+        }
 
         val options = FirebaseOptions.builder()
-            .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+            .setCredentials(credentials)
             .build()
 
         FirebaseApp.initializeApp(options)
-
     }
 }
