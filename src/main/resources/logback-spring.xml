@@ -17,143 +17,149 @@
         </encoder>
     </appender>
 
-    <!-- Loki Appender (JSON 형식) -->
-    <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
-        <http>
-            <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
-        </http>
-        <format>
-            <label>
-                <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},level=%level</pattern>
-            </label>
-            <message class="com.github.loki4j.logback.JsonLayout"/>
-        </format>
-    </appender>
+    <!-- Loki Appender (로컬/개인 서버 환경에서만 활성화) -->
+    <springProfile name="!prod">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},level=%level</pattern>
+                </label>
+                <message class="com.github.loki4j.logback.JsonLayout"/>
+            </format>
+        </appender>
 
-    <!-- API 로그용 Loki Appender (Plain Text - JSON 이중 래핑 방지) -->
-    <appender name="LOKI_API" class="com.github.loki4j.logback.Loki4jAppender">
-        <http>
-            <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
-        </http>
-        <format>
-            <label>
-                <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=api,level=%level</pattern>
-            </label>
-            <message>
-                <pattern>%msg</pattern>
-            </message>
-        </format>
-    </appender>
+        <appender name="LOKI_API" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=api,level=%level</pattern>
+                </label>
+                <message>
+                    <pattern>%msg</pattern>
+                </message>
+            </format>
+        </appender>
 
-    <!-- SQL 로그용 Loki Appender (JSON 형식) -->
-    <appender name="LOKI_SQL" class="com.github.loki4j.logback.Loki4jAppender">
-        <http>
-            <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
-        </http>
-        <format>
-            <label>
-                <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=sql,level=%level</pattern>
-            </label>
-            <message class="com.github.loki4j.logback.JsonLayout"/>
-        </format>
-    </appender>
+        <appender name="LOKI_SQL" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=sql,level=%level</pattern>
+                </label>
+                <message class="com.github.loki4j.logback.JsonLayout"/>
+            </format>
+        </appender>
 
-    <!-- HTTP Client 로그용 Loki Appender (JSON 형식) -->
-    <appender name="LOKI_HTTP" class="com.github.loki4j.logback.Loki4jAppender">
-        <http>
-            <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
-        </http>
-        <format>
-            <label>
-                <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=http_client,level=%level</pattern>
-            </label>
-            <message class="com.github.loki4j.logback.JsonLayout"/>
-        </format>
-    </appender>
+        <appender name="LOKI_HTTP" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=http_client,level=%level</pattern>
+                </label>
+                <message class="com.github.loki4j.logback.JsonLayout"/>
+            </format>
+        </appender>
 
-    <!-- Batch 로그용 Loki Appender (JSON 형식) -->
-    <appender name="LOKI_BATCH" class="com.github.loki4j.logback.Loki4jAppender">
-        <http>
-            <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
-        </http>
-        <format>
-            <label>
-                <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=batch,level=%level</pattern>
-            </label>
-            <message class="com.github.loki4j.logback.JsonLayout"/>
-        </format>
-    </appender>
+        <appender name="LOKI_BATCH" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>http://${LOKI_HOST:-localhost}:3100/loki/api/v1/push</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>app=${APP_LABEL},host=${HOSTNAME:-localhost},type=batch,level=%level</pattern>
+                </label>
+                <message class="com.github.loki4j.logback.JsonLayout"/>
+            </format>
+        </appender>
 
-    <!-- API 로깅 (Controller, Filter) -->
-    <logger name="com.haruUp" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI"/>
-    </logger>
+        <logger name="com.haruUp" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI"/>
+        </logger>
+        <logger name="API_LOG" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_API"/>
+        </logger>
+        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_SQL"/>
+        </logger>
+        <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_SQL"/>
+        </logger>
+        <logger name="p6spy" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_SQL"/>
+        </logger>
+        <logger name="HTTP_CLIENT_LOG" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_HTTP"/>
+        </logger>
+        <logger name="org.springframework.web.client" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_HTTP"/>
+        </logger>
+        <logger name="org.springframework.http.client" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_HTTP"/>
+        </logger>
+        <logger name="reactor.netty.http.client" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_HTTP"/>
+        </logger>
+        <logger name="org.springframework.batch" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_BATCH"/>
+        </logger>
+        <logger name="com.haruUp.ranking.batch" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI_BATCH"/>
+        </logger>
+        <logger name="com.github.loki4j" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
 
-    <!-- API 요청/응답 상세 로그 -->
-    <logger name="API_LOG" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_API"/>
-    </logger>
+    <!-- prod 환경 (Railway): 콘솔 로그만 사용 -->
+    <springProfile name="prod">
+        <logger name="com.haruUp" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="API_LOG" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="HTTP_CLIENT_LOG" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="org.springframework.batch" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="com.haruUp.ranking.batch" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
 
-    <!-- SQL 로깅 (Hibernate, p6spy) -->
-    <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_SQL"/>
-    </logger>
-
-    <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_SQL"/>
-    </logger>
-
-    <logger name="p6spy" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_SQL"/>
-    </logger>
-
-    <!-- HTTP Client 로깅 (커스텀 인터셉터) -->
-    <logger name="HTTP_CLIENT_LOG" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_HTTP"/>
-    </logger>
-
-    <!-- HTTP Client 로깅 (RestTemplate, WebClient 등) -->
-    <logger name="org.springframework.web.client" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_HTTP"/>
-    </logger>
-
-    <logger name="org.springframework.http.client" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_HTTP"/>
-    </logger>
-
-    <logger name="reactor.netty.http.client" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_HTTP"/>
-    </logger>
-
-    <!-- Spring Batch 로깅 -->
-    <logger name="org.springframework.batch" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_BATCH"/>
-    </logger>
-
-    <!-- 커스텀 Batch 로깅 (RankingBatch 등) -->
-    <logger name="com.haruUp.ranking.batch" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI_BATCH"/>
-    </logger>
-
-    <!-- Loki4j 디버그 -->
-    <logger name="com.github.loki4j" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-    </logger>
-
-    <!-- Root 로거 -->
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI"/>
-    </root>
 </configuration>

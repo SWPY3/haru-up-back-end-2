@@ -6,7 +6,7 @@ spring:
     active: ${APPS_ENV}
 
   config:
-    import: classpath:env.properties
+    import: optional:classpath:env.properties
 
   datasource:
     # PostgreSQL (Local Docker) - p6spy 비활성화 (hypersistence-utils 호환성 문제)
