@@ -1,0 +1,102 @@
+package com.haruUp.mission.application
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.haruUp.global.clova.ClovaApiClient
+import com.haruUp.global.clova.DailyMissionFromGoalPrompt
+import com.haruUp.mission.domain.MemberMissionEntity
+import com.haruUp.mission.domain.MissionStatus
+import com.haruUp.mission.infrastructure.MemberMissionRepository
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
+
+/**
+ * 목표 기반 미션 생성 공통 서비스
+ * - 챗봇 완료 시 즉시 미션 생성
+ * - 매일 자정 배치에서 미션 재생성
+ */
+@Service
+class GoalBasedMissionGenerationService(
+    private val memberMissionRepository: MemberMissionRepository,
+    private val clovaApiClient: ClovaApiClient,
+    private val objectMapper: ObjectMapper
+) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
+    companion object {
+        const val GOAL_BASED_INTEREST_ID = 0L
+    }
+
+    /**
+     * 목표와 대화 요약을 바탕으로 오늘의 미션을 생성하고 저장합니다.
+     */
+    @Transactional
+    fun generateAndSaveMissions(memberId: Long, goalText: String, conversationSummary: String): List<String> {
+        val today = LocalDate.now()
+
+        // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성
+        memberMissionRepository.deleteByMemberIdAndTargetDateAndMemberInterestId(
+            memberId, today, GOAL_BASED_INTEREST_ID
+        )
+
+        val missionContents = generateMissionsFromClova(memberId, goalText, conversationSummary)
+
+        val missions = missionContents.map { content ->
+            MemberMissionEntity(
+                memberId = memberId,
+                memberInterestId = GOAL_BASED_INTEREST_ID,
+                missionContent = content,
+                missionStatus = MissionStatus.READY,
+                expEarned = 10,
+                targetDate = today
+            )
+        }
+
+        memberMissionRepository.saveAll(missions)
+        logger.info("미션 생성 완료 - memberId: $memberId, 미션 수: ${missions.size}개")
+
+        return missionContents
+    }
+
+    /**
+     * Clova AI로 미션 목록을 생성합니다.
+     */
+    private fun generateMissionsFromClova(memberId: Long, goalText: String, conversationSummary: String): List<String> {
+        // 과거에 제공된 모든 미션 조회 (중복 방지)
+        val pastMissions = memberMissionRepository
+            .findByMemberIdAndMemberInterestId(memberId, GOAL_BASED_INTEREST_ID)
+            .map { it.missionContent }
+            .distinct()
+
+        val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationSummary, pastMissions)
+
+        val rawResponse = clovaApiClient.generateText(
+            userMessage = userMessage,
+            systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
+            model = ClovaApiClient.MODEL_HCX_003,
+            temperature = 0.7
+        ).trim()
+
+        return parseMissions(rawResponse)
+    }
+
+    /**
+     * Clova 응답 JSON을 파싱하여 미션 목록을 반환합니다.
+     * 예: {"missions":["미션1","미션2","미션3"]}
+     */
+    private fun parseMissions(rawResponse: String): List<String> {
+        return try {
+            val jsonNode = objectMapper.readTree(rawResponse)
+            val missionsNode = jsonNode.get("missions")
+                ?: throw IllegalArgumentException("missions 필드가 없습니다.")
+
+            val missions = missionsNode.map { it.asText() }.filter { it.isNotBlank() }
+            if (missions.isEmpty()) throw IllegalArgumentException("파싱된 미션이 없습니다.")
+            missions
+        } catch (e: Exception) {
+            logger.warn("미션 JSON 파싱 실패, 응답 원문: $rawResponse, 오류: ${e.message}")
+            throw IllegalArgumentException("Clova 응답 파싱 실패: ${e.message}", e)
+        }
+    }
+}

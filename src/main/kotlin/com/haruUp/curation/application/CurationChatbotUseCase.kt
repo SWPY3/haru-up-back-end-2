@@ -10,6 +10,7 @@ import com.haruUp.global.clova.ChatbotQuestionPrompt
 import com.haruUp.global.clova.ChatMessage
 import com.haruUp.goal.domain.MemberGoal
 import com.haruUp.goal.repository.MemberGoalRepository
+import com.haruUp.mission.application.GoalBasedMissionGenerationService
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.stereotype.Service
@@ -22,6 +23,7 @@ class CurationChatbotUseCase(
     private val redisTemplate: RedisTemplate<String, Any>,
     private val clovaApiClient: ClovaApiClient,
     private val memberGoalRepository: MemberGoalRepository,
+    private val goalBasedMissionGenerationService: GoalBasedMissionGenerationService,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -151,10 +153,17 @@ class CurationChatbotUseCase(
             )
             memberGoalRepository.save(memberGoal)
 
+            // 즉시 오늘의 미션 생성
+            goalBasedMissionGenerationService.generateAndSaveMissions(
+                memberId = session.memberId,
+                goalText = updatedFirstAnswer,
+                conversationSummary = conversationSummary
+            )
+
             // Redis 세션 삭제
             redisTemplate.delete(sessionKey)
 
-            logger.info("챗봇 대화 완료 - memberId: ${session.memberId}, sessionId: ${request.sessionId}")
+            logger.info("챗봇 대화 완료 및 미션 생성 - memberId: ${session.memberId}, sessionId: ${request.sessionId}")
 
             ChatbotCompleteResponse(
                 isCompleted = true,

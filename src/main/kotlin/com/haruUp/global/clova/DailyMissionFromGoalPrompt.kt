@@ -26,12 +26,26 @@ object DailyMissionFromGoalPrompt {
      *
      * @param goalText 사용자의 목표 텍스트
      * @param conversationSummary 챗봇 대화 요약
+     * @param pastMissions 과거에 이미 제공된 미션 목록 (중복 방지)
      */
-    fun buildUserMessage(goalText: String, conversationSummary: String): String {
+    fun buildUserMessage(
+        goalText: String,
+        conversationSummary: String,
+        pastMissions: List<String> = emptyList()
+    ): String {
         return buildString {
             append("사용자 목표: $goalText\n\n")
             append("대화 요약:\n$conversationSummary\n\n")
-            append("위 정보를 바탕으로 오늘 실천 가능한 맞춤 미션 3~5개를 생성해주세요.")
+            if (pastMissions.isNotEmpty()) {
+                append("【절대 반복 금지 미션 목록】\n")
+                append("아래 미션들은 이미 제공된 미션이므로 절대 다시 생성하지 마세요.\n")
+                append("내용이 동일하거나 매우 유사한 미션도 금지입니다.\n")
+                pastMissions.forEachIndexed { index, mission ->
+                    append("${index + 1}. $mission\n")
+                }
+                append("\n")
+            }
+            append("위 정보를 바탕으로 오늘 실천 가능한 새로운 맞춤 미션 3~5개를 생성해주세요.")
         }
     }
 }

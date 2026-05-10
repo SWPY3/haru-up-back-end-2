@@ -45,4 +45,21 @@ interface MemberMissionRepository :
         memberInterestId: Long,
         targetDate: LocalDate
     ): List<MemberMissionEntity>
+
+    /**
+     * 목표 기반 미션 재생성 시 기존 오늘 미션 삭제
+     */
+    fun deleteByMemberIdAndTargetDateAndMemberInterestId(
+        memberId: Long,
+        targetDate: LocalDate,
+        memberInterestId: Long
+    )
+
+    /**
+     * 사용자의 목표 기반 미션 전체 조회 (과거 미션 중복 방지용)
+     */
+    fun findByMemberIdAndMemberInterestId(
+        memberId: Long,
+        memberInterestId: Long
+    ): List<MemberMissionEntity>
 }
