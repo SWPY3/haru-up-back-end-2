@@ -31,12 +31,12 @@ class CurationChatbotUseCase(
         private const val SESSION_TTL_MINUTES = 30L
         private const val TOTAL_QUESTIONS = 5
 
-        private const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요? 작은 목표도 괜찮아요!"
+        private const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요?\n도전하고 싶은 목표를 선택하거나 직접 입력해주세요."
         private val FIRST_QUESTION_EXAMPLES = listOf(
-            "매일 30분씩 운동하고 싶어요",
-            "독서 습관을 만들고 싶어요",
-            "건강한 식습관을 가지고 싶어요",
-            "외국어 공부를 꾸준히 하고 싶어요"
+            "🏋️‍♀️ 체중 감량 5kg",
+            "🚭 금연하기",
+            "📚 토익 900점",
+            "📈 주식 수익률 월 1%"
         )
 
         private const val SUMMARY_SYSTEM_PROMPT = """
