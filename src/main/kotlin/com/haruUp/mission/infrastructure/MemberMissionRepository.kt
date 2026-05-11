@@ -62,4 +62,13 @@ interface MemberMissionRepository :
         memberId: Long,
         memberInterestId: Long
     ): List<MemberMissionEntity>
+
+    /**
+     * 현재 목표 시작일 이후의 미션만 조회 (목표 변경 시 이전 목표 미션 제외)
+     */
+    fun findByMemberIdAndMemberInterestIdAndTargetDateGreaterThanEqual(
+        memberId: Long,
+        memberInterestId: Long,
+        targetDate: LocalDate
+    ): List<MemberMissionEntity>
 }

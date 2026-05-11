@@ -30,9 +30,15 @@ class GoalBasedMissionGenerationService(
 
     /**
      * 목표와 대화 요약을 바탕으로 오늘의 미션을 생성하고 저장합니다.
+     * @param goalStartDate 현재 목표가 시작된 날짜 (이전 목표의 미션은 중복 방지에서 제외)
      */
     @Transactional
-    fun generateAndSaveMissions(memberId: Long, goalText: String, conversationSummary: String): List<String> {
+    fun generateAndSaveMissions(
+        memberId: Long,
+        goalText: String,
+        conversationSummary: String,
+        goalStartDate: LocalDate = LocalDate.now()
+    ): List<String> {
         val today = LocalDate.now()
 
         // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성
@@ -40,7 +46,7 @@ class GoalBasedMissionGenerationService(
             memberId, today, GOAL_BASED_INTEREST_ID
         )
 
-        val missionList = generateMissionsFromClova(memberId, goalText, conversationSummary)
+        val missionList = generateMissionsFromClova(memberId, goalText, conversationSummary, goalStartDate)
 
         val missions = missionList.map { (content, difficulty) ->
             MemberMissionEntity(
@@ -69,10 +75,17 @@ class GoalBasedMissionGenerationService(
      * Clova AI로 미션 목록을 생성합니다.
      * @return List<Pair<미션내용, 난이도>>
      */
-    private fun generateMissionsFromClova(memberId: Long, goalText: String, conversationSummary: String): List<Pair<String, Int>> {
-        // 과거에 제공된 모든 미션 조회 (중복 방지)
+    private fun generateMissionsFromClova(
+        memberId: Long,
+        goalText: String,
+        conversationSummary: String,
+        goalStartDate: LocalDate
+    ): List<Pair<String, Int>> {
+        // 현재 목표 시작일 이후의 미션만 중복 방지에 포함 (이전 목표 미션은 제외)
         val pastMissions = memberMissionRepository
-            .findByMemberIdAndMemberInterestId(memberId, GOAL_BASED_INTEREST_ID)
+            .findByMemberIdAndMemberInterestIdAndTargetDateGreaterThanEqual(
+                memberId, GOAL_BASED_INTEREST_ID, goalStartDate
+            )
             .map { it.missionContent }
             .distinct()
 

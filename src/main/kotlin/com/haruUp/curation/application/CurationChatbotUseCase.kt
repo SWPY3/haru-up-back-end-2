@@ -153,11 +153,12 @@ class CurationChatbotUseCase(
             )
             memberGoalRepository.save(memberGoal)
 
-            // 즉시 오늘의 미션 생성
+            // 즉시 오늘의 미션 생성 (새 목표 시작일 = 오늘)
             goalBasedMissionGenerationService.generateAndSaveMissions(
                 memberId = session.memberId,
                 goalText = updatedFirstAnswer,
-                conversationSummary = conversationSummary
+                conversationSummary = conversationSummary,
+                goalStartDate = java.time.LocalDate.now()
             )
 
             // Redis 세션 삭제

@@ -33,7 +33,8 @@ class DailyMissionGenerationBatch(
                 goalBasedMissionGenerationService.generateAndSaveMissions(
                     memberId = goal.memberId,
                     goalText = goal.goalText,
-                    conversationSummary = goal.conversationSummary
+                    conversationSummary = goal.conversationSummary,
+                    goalStartDate = goal.createdAt?.toLocalDate() ?: today
                 )
                 successCount++
             } catch (e: Exception) {
