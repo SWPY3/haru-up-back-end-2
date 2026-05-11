@@ -31,6 +31,10 @@ class MemberGoal(
     @Column(name = "conversation_summary", nullable = false, columnDefinition = "TEXT")
     val conversationSummary: String,
 
+    // 원본 Q&A 대화 전체 (JSON 형태로 저장, 미션 생성 시 활용)
+    @Column(name = "conversation_raw", columnDefinition = "TEXT")
+    val conversationRaw: String? = null,
+
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true
 

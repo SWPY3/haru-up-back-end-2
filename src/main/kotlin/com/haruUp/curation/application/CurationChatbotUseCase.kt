@@ -144,11 +144,15 @@ class CurationChatbotUseCase(
                 memberGoalRepository.save(existingGoal)
             }
 
+            // 원본 대화 JSON으로 변환
+            val conversationRaw = buildConversationRaw(session.history, allHistory)
+
             // 새 MemberGoal 저장
             val memberGoal = MemberGoal(
                 memberId = session.memberId,
                 goalText = updatedFirstAnswer,
                 conversationSummary = conversationSummary,
+                conversationRaw = conversationRaw,
                 isActive = true
             )
             memberGoalRepository.save(memberGoal)
@@ -157,7 +161,7 @@ class CurationChatbotUseCase(
             goalBasedMissionGenerationService.generateAndSaveMissions(
                 memberId = session.memberId,
                 goalText = updatedFirstAnswer,
-                conversationSummary = conversationSummary,
+                conversationRaw = conversationRaw,
                 goalStartDate = java.time.LocalDate.now()
             )
 
@@ -184,6 +188,27 @@ class CurationChatbotUseCase(
             model = ClovaApiClient.MODEL_HCX_003,
             temperature = 0.7
         ).trim()
+    }
+
+    /**
+     * 전체 Q&A 대화를 가독성 있는 텍스트 형식으로 변환합니다.
+     * finalHistory 구조: [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5]
+     */
+    private fun buildConversationRaw(questionHistory: List<String>, finalHistory: List<String>): String {
+        return buildString {
+            append("Q1: $FIRST_QUESTION\n")
+            finalHistory.forEachIndexed { index, text ->
+                if (index % 2 == 0) {
+                    // 사용자 답변 (index 0, 2, 4, 6, 8)
+                    val num = index / 2 + 1
+                    append("A$num: $text\n")
+                } else {
+                    // AI 질문 (index 1, 3, 5, 7)
+                    val num = index / 2 + 2
+                    append("Q$num: $text\n")
+                }
+            }
+        }
     }
 
     /**

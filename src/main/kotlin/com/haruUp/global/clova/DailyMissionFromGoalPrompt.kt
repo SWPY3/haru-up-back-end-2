@@ -33,17 +33,17 @@ object DailyMissionFromGoalPrompt {
      * 일일 미션 생성 사용자 메시지 빌드
      *
      * @param goalText 사용자의 목표 텍스트
-     * @param conversationSummary 챗봇 대화 요약
+     * @param conversationContext 챗봇 대화 내용 (원본 Q&A 또는 요약)
      * @param pastMissions 과거에 이미 제공된 미션 목록 (중복 방지)
      */
     fun buildUserMessage(
         goalText: String,
-        conversationSummary: String,
+        conversationContext: String,
         pastMissions: List<String> = emptyList()
     ): String {
         return buildString {
             append("【사용자 목표】\n$goalText\n\n")
-            append("【사용자 상세 정보 (대화 요약)】\n$conversationSummary\n\n")
+            append("【사용자 상세 정보 (목표 설정 대화 전문)】\n$conversationContext\n\n")
             append("위 사용자 정보를 철저히 분석하여 이 사람에게만 맞는 맞춤형 미션 9개를 설계하세요.\n")
             append("일반적인 미션이 아닌, 이 사람의 현재 상황과 수준에 딱 맞는 구체적인 미션이어야 합니다.\n")
             if (pastMissions.isNotEmpty()) {

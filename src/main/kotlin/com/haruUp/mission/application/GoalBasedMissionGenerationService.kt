@@ -29,14 +29,17 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * 목표와 대화 요약을 바탕으로 오늘의 미션을 생성하고 저장합니다.
+     * 목표와 대화 내용을 바탕으로 오늘의 미션을 생성하고 저장합니다.
+     * @param conversationRaw 원본 Q&A 대화 텍스트 (있으면 우선 사용)
+     * @param conversationSummary AI 요약 대화 (conversationRaw가 없을 때 fallback)
      * @param goalStartDate 현재 목표가 시작된 날짜 (이전 목표의 미션은 중복 방지에서 제외)
      */
     @Transactional
     fun generateAndSaveMissions(
         memberId: Long,
         goalText: String,
-        conversationSummary: String,
+        conversationSummary: String = "",
+        conversationRaw: String? = null,
         goalStartDate: LocalDate = LocalDate.now()
     ): List<String> {
         val today = LocalDate.now()
@@ -46,7 +49,8 @@ class GoalBasedMissionGenerationService(
             memberId, today, GOAL_BASED_INTEREST_ID
         )
 
-        val missionList = generateMissionsFromClova(memberId, goalText, conversationSummary, goalStartDate)
+        val conversationContext = conversationRaw ?: conversationSummary
+        val missionList = generateMissionsFromClova(memberId, goalText, conversationContext, goalStartDate)
 
         val missions = missionList.map { (content, difficulty) ->
             MemberMissionEntity(
@@ -73,12 +77,13 @@ class GoalBasedMissionGenerationService(
 
     /**
      * Clova AI로 미션 목록을 생성합니다.
+     * @param conversationContext 대화 내용 (원본 또는 요약)
      * @return List<Pair<미션내용, 난이도>>
      */
     private fun generateMissionsFromClova(
         memberId: Long,
         goalText: String,
-        conversationSummary: String,
+        conversationContext: String,
         goalStartDate: LocalDate
     ): List<Pair<String, Int>> {
         // 현재 목표 시작일 이후의 미션만 중복 방지에 포함 (이전 목표 미션은 제외)
@@ -89,7 +94,7 @@ class GoalBasedMissionGenerationService(
             .map { it.missionContent }
             .distinct()
 
-        val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationSummary, pastMissions)
+        val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationContext, pastMissions)
 
         val rawResponse = clovaApiClient.generateText(
             userMessage = userMessage,

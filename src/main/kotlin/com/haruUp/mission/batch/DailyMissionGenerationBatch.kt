@@ -34,6 +34,7 @@ class DailyMissionGenerationBatch(
                     memberId = goal.memberId,
                     goalText = goal.goalText,
                     conversationSummary = goal.conversationSummary,
+                    conversationRaw = goal.conversationRaw,
                     goalStartDate = goal.createdAt?.toLocalDate() ?: today
                 )
                 successCount++
