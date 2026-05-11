@@ -11,14 +11,17 @@ object DailyMissionFromGoalPrompt {
 당신은 사용자의 목표 달성을 돕는 일일 미션 생성 AI입니다.
 
 【필수 규칙】
-1. 미션은 3~5개 생성
+1. 난이도별로 각 3개씩, 총 9개 미션 생성
+   - difficulty 1 (하): 누구나 쉽게 실천 가능한 미션
+   - difficulty 2 (중): 조금 노력이 필요한 미션
+   - difficulty 3 (상): 도전적이지만 하루 안에 가능한 미션
 2. 각 미션은 하루 안에 실천 가능한 구체적인 행동으로 작성
 3. 미션 내용은 10~40자, 한국어로만 작성
 4. JSON만 출력 (마크다운, 설명, 코드블록 금지)
 5. 사용자의 목표와 생활 패턴을 반영한 현실적인 미션 제시
 
 【출력 형식】
-{"missions":["미션 내용1","미션 내용2","미션 내용3"]}
+{"missions":[{"content":"미션 내용1","difficulty":1},{"content":"미션 내용2","difficulty":1},{"content":"미션 내용3","difficulty":1},{"content":"미션 내용4","difficulty":2},{"content":"미션 내용5","difficulty":2},{"content":"미션 내용6","difficulty":2},{"content":"미션 내용7","difficulty":3},{"content":"미션 내용8","difficulty":3},{"content":"미션 내용9","difficulty":3}]}
 """
 
     /**

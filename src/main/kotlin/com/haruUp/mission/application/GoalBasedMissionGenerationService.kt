@@ -40,15 +40,21 @@ class GoalBasedMissionGenerationService(
             memberId, today, GOAL_BASED_INTEREST_ID
         )
 
-        val missionContents = generateMissionsFromClova(memberId, goalText, conversationSummary)
+        val missionList = generateMissionsFromClova(memberId, goalText, conversationSummary)
 
-        val missions = missionContents.map { content ->
+        val missions = missionList.map { (content, difficulty) ->
             MemberMissionEntity(
                 memberId = memberId,
                 memberInterestId = GOAL_BASED_INTEREST_ID,
                 missionContent = content,
+                difficulty = difficulty,
                 missionStatus = MissionStatus.READY,
-                expEarned = 10,
+                expEarned = when (difficulty) {
+                    1 -> 10  // 하
+                    2 -> 20  // 중
+                    3 -> 30  // 상
+                    else -> 10
+                },
                 targetDate = today
             )
         }
@@ -56,13 +62,14 @@ class GoalBasedMissionGenerationService(
         memberMissionRepository.saveAll(missions)
         logger.info("미션 생성 완료 - memberId: $memberId, 미션 수: ${missions.size}개")
 
-        return missionContents
+        return missionList.map { it.first }
     }
 
     /**
      * Clova AI로 미션 목록을 생성합니다.
+     * @return List<Pair<미션내용, 난이도>>
      */
-    private fun generateMissionsFromClova(memberId: Long, goalText: String, conversationSummary: String): List<String> {
+    private fun generateMissionsFromClova(memberId: Long, goalText: String, conversationSummary: String): List<Pair<String, Int>> {
         // 과거에 제공된 모든 미션 조회 (중복 방지)
         val pastMissions = memberMissionRepository
             .findByMemberIdAndMemberInterestId(memberId, GOAL_BASED_INTEREST_ID)
@@ -83,15 +90,21 @@ class GoalBasedMissionGenerationService(
 
     /**
      * Clova 응답 JSON을 파싱하여 미션 목록을 반환합니다.
-     * 예: {"missions":["미션1","미션2","미션3"]}
+     * 예: {"missions":[{"content":"미션1","difficulty":1}, ...]}
+     * @return List<Pair<미션내용, 난이도>>
      */
-    private fun parseMissions(rawResponse: String): List<String> {
+    private fun parseMissions(rawResponse: String): List<Pair<String, Int>> {
         return try {
             val jsonNode = objectMapper.readTree(rawResponse)
             val missionsNode = jsonNode.get("missions")
                 ?: throw IllegalArgumentException("missions 필드가 없습니다.")
 
-            val missions = missionsNode.map { it.asText() }.filter { it.isNotBlank() }
+            val missions = missionsNode.mapNotNull { node ->
+                val content = node.get("content")?.asText()?.trim()
+                val difficulty = node.get("difficulty")?.asInt() ?: 1
+                if (!content.isNullOrBlank()) Pair(content, difficulty) else null
+            }
+
             if (missions.isEmpty()) throw IllegalArgumentException("파싱된 미션이 없습니다.")
             missions
         } catch (e: Exception) {
