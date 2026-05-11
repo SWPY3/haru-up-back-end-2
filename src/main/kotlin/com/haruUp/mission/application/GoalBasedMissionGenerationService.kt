@@ -24,10 +24,6 @@ class GoalBasedMissionGenerationService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    companion object {
-        const val GOAL_BASED_INTEREST_ID = 0L
-    }
-
     /**
      * 목표와 대화 내용을 바탕으로 오늘의 미션을 생성하고 저장합니다.
      * @param conversationRaw 원본 Q&A 대화 텍스트 (있으면 우선 사용)
@@ -76,9 +72,9 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * Clova AI로 미션 목록을 생성합니다.
+     * Clova AI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
      * @param conversationContext 대화 내용 (원본 또는 요약)
-     * @return List<Pair<미션내용, 난이도>>
+     * @return List<Pair<미션내용, 난이도>> (하3 + 중3 + 상3 = 9개 보장)
      */
     private fun generateMissionsFromClova(
         memberId: Long,
@@ -96,14 +92,48 @@ class GoalBasedMissionGenerationService(
 
         val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationContext, pastMissions)
 
-        val rawResponse = clovaApiClient.generateText(
-            userMessage = userMessage,
-            systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
-            model = ClovaApiClient.MODEL_HCX_003,
-            temperature = 0.7
-        ).trim()
+        var lastException: Exception? = null
+        repeat(MAX_MISSION_RETRY) { attempt ->
+            try {
+                val rawResponse = clovaApiClient.generateText(
+                    userMessage = userMessage,
+                    systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
+                    model = ClovaApiClient.MODEL_HCX_007,
+                    temperature = 0.5
+                ).trim()
 
-        return parseMissions(rawResponse)
+                val missions = parseMissions(rawResponse)
+
+                if (validateDifficultyDistribution(missions)) {
+                    if (attempt > 0) {
+                        logger.info("미션 난이도 분포 정상화 완료 (${attempt + 1}번째 시도) - memberId: $memberId")
+                    }
+                    return missions
+                }
+
+                val grouped = missions.groupBy { it.second }
+                logger.warn(
+                    "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                    "- 하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
+                    "- memberId: $memberId"
+                )
+            } catch (e: Exception) {
+                lastException = e
+                logger.warn("미션 생성 실패 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) - memberId: $memberId, 오류: ${e.message}")
+            }
+        }
+
+        throw lastException ?: IllegalStateException(
+            "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포(하3+중3+상3)의 미션 생성 실패 - memberId: $memberId"
+        )
+    }
+
+    /**
+     * 미션 난이도 분포가 하3, 중3, 상3인지 검증합니다.
+     */
+    private fun validateDifficultyDistribution(missions: List<Pair<String, Int>>): Boolean {
+        val grouped = missions.groupBy { it.second }
+        return grouped[1]?.size == 3 && grouped[2]?.size == 3 && grouped[3]?.size == 3
     }
 
     /**
@@ -129,5 +159,10 @@ class GoalBasedMissionGenerationService(
             logger.warn("미션 JSON 파싱 실패, 응답 원문: $rawResponse, 오류: ${e.message}")
             throw IllegalArgumentException("Clova 응답 파싱 실패: ${e.message}", e)
         }
+    }
+
+    companion object {
+        const val GOAL_BASED_INTEREST_ID = 0L
+        private const val MAX_MISSION_RETRY = 3
     }
 }

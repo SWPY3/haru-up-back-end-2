@@ -17,13 +17,23 @@ object DailyMissionFromGoalPrompt {
 - 측정 가능하고 완료 여부를 명확히 알 수 있는 미션
 - 미션 간 연계성 고려 (하→중→상 단계적으로 도전할 수 있게)
 
+【난이도 기준 - 반드시 각 난이도 정확히 3개】
+- difficulty 1 (하) 3개: 5~15분, 의지력 없어도 가능, 오늘 컨디션이 최악이어도 할 수 있는 것
+- difficulty 2 (중) 3개: 30분~1시간, 집중력 필요, 적당한 노력 필요
+- difficulty 3 (상) 3개: 1~2시간, 오늘의 진짜 도전, 끝내면 성취감이 큰 것
+
+【출력 전 필수 자체 검수】
+출력하기 전에 반드시 확인하세요:
+- difficulty 1이 정확히 3개인가?
+- difficulty 2가 정확히 3개인가?
+- difficulty 3이 정확히 3개인가?
+- 총 9개인가?
+3+3+3=9개가 아니면 수정 후 출력하세요.
+
 【절대 규칙】
-1. 반드시 정확히 9개 생성 (9개 미만 절대 금지)
-2. difficulty 1 (하) 정확히 3개: 5~15분, 의지력 없어도 가능한 수준
-3. difficulty 2 (중) 정확히 3개: 30분~1시간, 집중력 필요
-4. difficulty 3 (상) 정확히 3개: 1~2시간, 오늘의 도전 과제
-5. 미션 내용 10~40자, 한국어만 사용
-6. JSON만 출력 (마크다운, 설명, 코드블록 절대 금지)
+1. 미션 내용 10~40자, 한국어만 사용
+2. JSON만 출력 (마크다운, 설명, 코드블록, ```  절대 금지)
+3. 아래 형식 그대로 출력
 
 【출력 형식】
 {"missions":[{"content":"미션1","difficulty":1},{"content":"미션2","difficulty":1},{"content":"미션3","difficulty":1},{"content":"미션4","difficulty":2},{"content":"미션5","difficulty":2},{"content":"미션6","difficulty":2},{"content":"미션7","difficulty":3},{"content":"미션8","difficulty":3},{"content":"미션9","difficulty":3}]}

@@ -31,7 +31,7 @@ class CurationChatbotUseCase(
     companion object {
         private const val SESSION_KEY_PREFIX = "chatbot:session:"
         private const val SESSION_TTL_MINUTES = 30L
-        private const val TOTAL_QUESTIONS = 5
+        private const val TOTAL_QUESTIONS = 6
 
         private const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요?\n도전하고 싶은 목표를 선택하거나 직접 입력해주세요."
         private val FIRST_QUESTION_EXAMPLES = listOf(
@@ -192,7 +192,7 @@ class CurationChatbotUseCase(
 
     /**
      * 전체 Q&A 대화를 가독성 있는 텍스트 형식으로 변환합니다.
-     * finalHistory 구조: [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5]
+     * finalHistory 구조: [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5, Q6, A6]
      */
     private fun buildConversationRaw(questionHistory: List<String>, finalHistory: List<String>): String {
         return buildString {
