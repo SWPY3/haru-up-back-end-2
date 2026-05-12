@@ -181,7 +181,14 @@ class CurationChatbotUseCase(
      * Clova AI를 사용하여 꼬리질문을 생성합니다.
      */
     private fun generateFollowUpQuestion(goalText: String, history: List<String>): String {
-        val userMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history)
+        // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
+        // Q1(고정 첫 질문) + 이미 생성된 AI 질문들을 중복 방지 목록으로 전달
+        val previousQuestions = buildList {
+            add(FIRST_QUESTION)
+            history.filterIndexed { index, _ -> index % 2 == 1 }.forEach { add(it) }
+        }
+
+        val userMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
         return clovaApiClient.generateText(
             userMessage = userMessage,
             systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,

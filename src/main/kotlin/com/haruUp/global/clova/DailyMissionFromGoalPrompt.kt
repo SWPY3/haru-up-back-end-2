@@ -45,17 +45,32 @@ object DailyMissionFromGoalPrompt {
      * @param goalText 사용자의 목표 텍스트
      * @param conversationContext 챗봇 대화 내용 (원본 Q&A 또는 요약)
      * @param pastMissions 과거에 이미 제공된 미션 목록 (중복 방지)
+     * @param dayNumber 목표 시작 후 몇 일차인지 (1부터 시작, 미션 강도 조절에 사용)
      */
     fun buildUserMessage(
         goalText: String,
         conversationContext: String,
-        pastMissions: List<String> = emptyList()
+        pastMissions: List<String> = emptyList(),
+        dayNumber: Int = 1
     ): String {
+        val periodGuide = when {
+            dayNumber <= 7 ->
+                "D+$dayNumber (적응기): 처음 일주일입니다. 성공 경험이 쌓이는 것이 핵심입니다. " +
+                "하 난이도는 정말 아무 의지 없어도 되는 수준으로 매우 쉽게, 상 난이도도 무리하지 않게 설계하세요."
+            dayNumber <= 30 ->
+                "D+$dayNumber (성장기): 습관이 형성되는 시기입니다. " +
+                "어느 정도 루틴이 생겼다고 가정하고, 조금씩 강도를 높여가는 미션을 설계하세요."
+            else ->
+                "D+$dayNumber (심화기): 목표를 향해 꾸준히 달려온 단계입니다. " +
+                "이미 기본 루틴은 갖춰졌다고 보고, 더 구체적이고 도전적인 미션으로 실력을 한 단계 끌어올리세요."
+        }
+
         return buildString {
             append("【사용자 목표】\n$goalText\n\n")
+            append("【오늘 날짜 정보】\n$periodGuide\n\n")
             append("【사용자 상세 정보 (목표 설정 대화 전문)】\n$conversationContext\n\n")
             append("위 사용자 정보를 철저히 분석하여 이 사람에게만 맞는 맞춤형 미션 9개를 설계하세요.\n")
-            append("일반적인 미션이 아닌, 이 사람의 현재 상황과 수준에 딱 맞는 구체적인 미션이어야 합니다.\n")
+            append("일반적인 미션이 아닌, 이 사람의 현재 상황·수준·오늘 일차에 딱 맞는 구체적인 미션이어야 합니다.\n")
             if (pastMissions.isNotEmpty()) {
                 append("\n【이미 제공한 미션 - 절대 반복 금지】\n")
                 append("아래와 동일하거나 유사한 미션은 생성하지 마세요.\n")

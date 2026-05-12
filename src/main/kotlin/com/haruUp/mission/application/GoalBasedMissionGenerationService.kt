@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /**
  * 목표 기반 미션 생성 공통 서비스
@@ -90,7 +91,10 @@ class GoalBasedMissionGenerationService(
             .map { it.missionContent }
             .distinct()
 
-        val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationContext, pastMissions)
+        // 목표 시작일로부터 오늘이 몇 일차인지 계산 (최소 1일차)
+        val dayNumber = ChronoUnit.DAYS.between(goalStartDate, LocalDate.now()).toInt().coerceAtLeast(0) + 1
+
+        val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationContext, pastMissions, dayNumber)
 
         var lastException: Exception? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
