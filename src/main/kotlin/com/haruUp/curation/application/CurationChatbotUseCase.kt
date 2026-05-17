@@ -189,12 +189,14 @@ class CurationChatbotUseCase(
         }
 
         val userMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
-        return clovaApiClient.generateText(
+        val raw = clovaApiClient.generateText(
             userMessage = userMessage,
             systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
             model = ClovaApiClient.MODEL_HCX_003,
             temperature = 0.7
         ).trim()
+        // "Q2: ", "Q3: " 등 번호 접두사가 붙어 나오는 경우 제거
+        return raw.replace(Regex("^Q\\d+[:.\\s]+"), "")
     }
 
     /**

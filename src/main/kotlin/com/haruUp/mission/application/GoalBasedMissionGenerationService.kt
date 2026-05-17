@@ -147,7 +147,13 @@ class GoalBasedMissionGenerationService(
      */
     private fun parseMissions(rawResponse: String): List<ParsedMission> {
         return try {
-            val jsonNode = objectMapper.readTree(rawResponse)
+            // Clova가 마크다운 코드블록(```json ... ```)으로 감싸서 반환하는 경우 제거
+            val cleaned = rawResponse
+                .replace(Regex("^```[a-zA-Z]*\\s*"), "")
+                .replace(Regex("```\\s*$"), "")
+                .trim()
+
+            val jsonNode = objectMapper.readTree(cleaned)
             val missionsNode = jsonNode.get("missions")
                 ?: throw IllegalArgumentException("missions 필드가 없습니다.")
 
