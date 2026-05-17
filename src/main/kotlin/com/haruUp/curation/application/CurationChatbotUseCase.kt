@@ -129,7 +129,7 @@ class CurationChatbotUseCase(
                 isLast = isLast
             )
         } else {
-            // 5번째 질문 답변 완료 → 대화 종료 처리
+            // 6번째 질문 답변 완료 → 대화 종료 처리
             val allHistory = updatedHistory
 
             // 대화 요약 생성

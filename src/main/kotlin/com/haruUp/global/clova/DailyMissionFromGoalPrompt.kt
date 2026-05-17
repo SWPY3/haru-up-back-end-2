@@ -17,6 +17,13 @@ object DailyMissionFromGoalPrompt {
 - 측정 가능하고 완료 여부를 명확히 알 수 있는 미션
 - 미션 간 연계성 고려 (하→중→상 단계적으로 도전할 수 있게)
 
+【필드 작성 기준】
+- content (10~25자): 미션 제목. 무엇을 할지 한눈에 보이는 짧은 제목.
+  예) "LC 파트3,4 핵심 패턴 메모"
+- description (30~120자): 구체적 실행 방법. 어떻게 해야 하는지 단계별로 설명.
+  특정 앱/유튜브/책/방법론 등을 명시하여 바로 실행할 수 있도록.
+  예) "유튜브 '토익 독학 길잡이' 채널의 '[LC] 파트3,4 빈출 질문 유형 완전정복' 영상 시청 후 핵심 질문 패턴 5가지 메모하기"
+
 【난이도 기준 - 반드시 각 난이도 정확히 3개】
 - difficulty 1 (하) 3개: 5~15분, 의지력 없어도 가능, 오늘 컨디션이 최악이어도 할 수 있는 것
 - difficulty 2 (중) 3개: 30분~1시간, 집중력 필요, 적당한 노력 필요
@@ -31,12 +38,12 @@ object DailyMissionFromGoalPrompt {
 3+3+3=9개가 아니면 수정 후 출력하세요.
 
 【절대 규칙】
-1. 미션 내용 10~40자, 한국어만 사용
-2. JSON만 출력 (마크다운, 설명, 코드블록, ```  절대 금지)
+1. 한국어만 사용
+2. JSON만 출력 (마크다운, 설명, 코드블록, ``` 절대 금지)
 3. 아래 형식 그대로 출력
 
 【출력 형식】
-{"missions":[{"content":"미션1","difficulty":1},{"content":"미션2","difficulty":1},{"content":"미션3","difficulty":1},{"content":"미션4","difficulty":2},{"content":"미션5","difficulty":2},{"content":"미션6","difficulty":2},{"content":"미션7","difficulty":3},{"content":"미션8","difficulty":3},{"content":"미션9","difficulty":3}]}
+{"missions":[{"content":"미션1 제목","description":"미션1 구체적 실행 방법","difficulty":1},{"content":"미션2 제목","description":"미션2 구체적 실행 방법","difficulty":1},{"content":"미션3 제목","description":"미션3 구체적 실행 방법","difficulty":1},{"content":"미션4 제목","description":"미션4 구체적 실행 방법","difficulty":2},{"content":"미션5 제목","description":"미션5 구체적 실행 방법","difficulty":2},{"content":"미션6 제목","description":"미션6 구체적 실행 방법","difficulty":2},{"content":"미션7 제목","description":"미션7 구체적 실행 방법","difficulty":3},{"content":"미션8 제목","description":"미션8 구체적 실행 방법","difficulty":3},{"content":"미션9 제목","description":"미션9 구체적 실행 방법","difficulty":3}]}
 """
 
     /**

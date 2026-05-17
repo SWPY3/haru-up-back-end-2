@@ -23,10 +23,13 @@ data class MemberMissionDto (
     @Schema(description = "목표 날짜", example = "2025-01-01")
     val targetDate: LocalDate = LocalDate.now(),
 
-    @Schema(description = "미션 내용", example = "오늘 30분 운동하기")
+    @Schema(description = "미션 내용", example = "LC 파트3,4 핵심 패턴 메모")
     val missionContent: String? = null,
 
-    @Schema(description = "미션 난이도 (1~5)", example = "3")
+    @Schema(description = "미션 설명 (구체적인 실행 방법)", example = "유튜브 '토익 독학 길잡이' 채널의 '[LC] 파트3,4 빈출 질문 유형 완전정복' 영상 시청 후 핵심 질문 패턴 5가지 메모하기")
+    val missionDescription: String? = null,
+
+    @Schema(description = "미션 난이도 (1~3)", example = "1")
     val difficulty: Int? = null,
 
     @Schema(description = "관심사 전체 경로 (interest_embeddings.full_path)", example = "[\"체력관리 및 운동\", \"헬스\", \"근력 키우기\"]")

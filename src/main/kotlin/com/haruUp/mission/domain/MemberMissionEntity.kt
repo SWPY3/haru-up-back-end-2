@@ -37,6 +37,9 @@ class MemberMissionEntity (
     @Column(name = "mission_content", nullable = false, columnDefinition = "TEXT")
     val missionContent: String,
 
+    @Column(name = "mission_description", columnDefinition = "TEXT")
+    val missionDescription: String? = null,
+
     @Column(name = "difficulty")
     val difficulty: Int? = null,
 
@@ -87,6 +90,7 @@ class MemberMissionEntity (
         missionStatus = this.missionStatus,
         targetDate = this.targetDate,
         missionContent = this.missionContent,
+        missionDescription = this.missionDescription,
         difficulty = this.difficulty,
         fullPath = fullPath,
         directFullPath = directFullPath

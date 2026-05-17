@@ -49,14 +49,15 @@ class GoalBasedMissionGenerationService(
         val conversationContext = conversationRaw ?: conversationSummary
         val missionList = generateMissionsFromClova(memberId, goalText, conversationContext, goalStartDate)
 
-        val missions = missionList.map { (content, difficulty) ->
+        val missions = missionList.map { parsed ->
             MemberMissionEntity(
                 memberId = memberId,
                 memberInterestId = GOAL_BASED_INTEREST_ID,
-                missionContent = content,
-                difficulty = difficulty,
+                missionContent = parsed.content,
+                missionDescription = parsed.description,
+                difficulty = parsed.difficulty,
                 missionStatus = MissionStatus.READY,
-                expEarned = when (difficulty) {
+                expEarned = when (parsed.difficulty) {
                     1 -> 10  // 하
                     2 -> 20  // 중
                     3 -> 30  // 상
@@ -69,20 +70,20 @@ class GoalBasedMissionGenerationService(
         memberMissionRepository.saveAll(missions)
         logger.info("미션 생성 완료 - memberId: $memberId, 미션 수: ${missions.size}개")
 
-        return missionList.map { it.first }
+        return missionList.map { it.content }
     }
 
     /**
      * Clova AI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
      * @param conversationContext 대화 내용 (원본 또는 요약)
-     * @return List<Pair<미션내용, 난이도>> (하3 + 중3 + 상3 = 9개 보장)
+     * @return List<ParsedMission> (하3 + 중3 + 상3 = 9개 보장)
      */
     private fun generateMissionsFromClova(
         memberId: Long,
         goalText: String,
         conversationContext: String,
         goalStartDate: LocalDate
-    ): List<Pair<String, Int>> {
+    ): List<ParsedMission> {
         // 현재 목표 시작일 이후의 미션만 중복 방지에 포함 (이전 목표 미션은 제외)
         val pastMissions = memberMissionRepository
             .findByMemberIdAndMemberInterestIdAndTargetDateGreaterThanEqual(
@@ -115,7 +116,7 @@ class GoalBasedMissionGenerationService(
                     return missions
                 }
 
-                val grouped = missions.groupBy { it.second }
+                val grouped = missions.groupBy { it.difficulty }
                 logger.warn(
                     "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
                     "- 하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
@@ -135,17 +136,16 @@ class GoalBasedMissionGenerationService(
     /**
      * 미션 난이도 분포가 하3, 중3, 상3인지 검증합니다.
      */
-    private fun validateDifficultyDistribution(missions: List<Pair<String, Int>>): Boolean {
-        val grouped = missions.groupBy { it.second }
+    private fun validateDifficultyDistribution(missions: List<ParsedMission>): Boolean {
+        val grouped = missions.groupBy { it.difficulty }
         return grouped[1]?.size == 3 && grouped[2]?.size == 3 && grouped[3]?.size == 3
     }
 
     /**
      * Clova 응답 JSON을 파싱하여 미션 목록을 반환합니다.
-     * 예: {"missions":[{"content":"미션1","difficulty":1}, ...]}
-     * @return List<Pair<미션내용, 난이도>>
+     * 예: {"missions":[{"content":"미션1","description":"실행방법","difficulty":1}, ...]}
      */
-    private fun parseMissions(rawResponse: String): List<Pair<String, Int>> {
+    private fun parseMissions(rawResponse: String): List<ParsedMission> {
         return try {
             val jsonNode = objectMapper.readTree(rawResponse)
             val missionsNode = jsonNode.get("missions")
@@ -153,8 +153,9 @@ class GoalBasedMissionGenerationService(
 
             val missions = missionsNode.mapNotNull { node ->
                 val content = node.get("content")?.asText()?.trim()
+                val description = node.get("description")?.asText()?.trim()
                 val difficulty = node.get("difficulty")?.asInt() ?: 1
-                if (!content.isNullOrBlank()) Pair(content, difficulty) else null
+                if (!content.isNullOrBlank()) ParsedMission(content, description ?: "", difficulty) else null
             }
 
             if (missions.isEmpty()) throw IllegalArgumentException("파싱된 미션이 없습니다.")
@@ -164,6 +165,9 @@ class GoalBasedMissionGenerationService(
             throw IllegalArgumentException("Clova 응답 파싱 실패: ${e.message}", e)
         }
     }
+
+    /** Clova 파싱 결과를 담는 내부 데이터 클래스 */
+    private data class ParsedMission(val content: String, val description: String, val difficulty: Int)
 
     companion object {
         const val GOAL_BASED_INTEREST_ID = 0L
