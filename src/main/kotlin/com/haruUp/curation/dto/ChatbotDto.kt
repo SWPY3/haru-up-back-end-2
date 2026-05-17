@@ -41,11 +41,32 @@ data class ChatbotAnswerResponse(
     val isLast: Boolean
 )
 
-@Schema(description = "챗봇 완료 응답 (5번째 질문 답변 후)")
+@Schema(description = "챗봇 완료 응답 (6번째 질문 답변 후) - 미션 목록 포함")
 data class ChatbotCompleteResponse(
     @Schema(description = "완료 여부", example = "true")
     val isCompleted: Boolean,
 
-    @Schema(description = "사용자의 첫 번째 목표 답변")
-    val goalText: String
+    @Schema(description = "사용자의 목표 텍스트")
+    val goalText: String,
+
+    @Schema(description = "생성된 미션 목록 (하3 + 중3 + 상3 = 9개)")
+    val missions: List<ChatbotMissionDto>
+)
+
+@Schema(description = "챗봇 완료 후 반환되는 미션 정보")
+data class ChatbotMissionDto(
+    @Schema(description = "미션 ID", example = "1")
+    val id: Long,
+
+    @Schema(description = "미션 제목 (짧은 텍스트)", example = "LC 파트3,4 핵심 패턴 메모")
+    val missionContent: String,
+
+    @Schema(description = "미션 구체적 실행 방법", example = "유튜브 '토익 독학 길잡이' 채널 영상 시청 후 핵심 패턴 5가지 메모하기")
+    val missionDescription: String?,
+
+    @Schema(description = "난이도 (1=하, 2=중, 3=상)", example = "1")
+    val difficulty: Int,
+
+    @Schema(description = "완료 시 획득 경험치", example = "10")
+    val expEarned: Int
 )

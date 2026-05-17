@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
+import com.haruUp.curation.dto.ChatbotMissionDto
 import com.haruUp.curation.dto.ChatbotStartResponse
 import com.haruUp.global.clova.ClovaApiClient
 import com.haruUp.global.clova.ChatbotQuestionPrompt
@@ -158,7 +159,7 @@ class CurationChatbotUseCase(
             memberGoalRepository.save(memberGoal)
 
             // 즉시 오늘의 미션 생성 (새 목표 시작일 = 오늘)
-            goalBasedMissionGenerationService.generateAndSaveMissions(
+            val savedMissions = goalBasedMissionGenerationService.generateAndSaveMissions(
                 memberId = session.memberId,
                 goalText = updatedFirstAnswer,
                 conversationRaw = conversationRaw,
@@ -172,7 +173,16 @@ class CurationChatbotUseCase(
 
             ChatbotCompleteResponse(
                 isCompleted = true,
-                goalText = updatedFirstAnswer
+                goalText = updatedFirstAnswer,
+                missions = savedMissions.map { entity ->
+                    ChatbotMissionDto(
+                        id = entity.id!!,
+                        missionContent = entity.missionContent,
+                        missionDescription = entity.missionDescription,
+                        difficulty = entity.difficulty ?: 1,
+                        expEarned = entity.expEarned
+                    )
+                }
             )
         }
     }

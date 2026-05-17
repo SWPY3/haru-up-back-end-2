@@ -38,7 +38,7 @@ class GoalBasedMissionGenerationService(
         conversationSummary: String = "",
         conversationRaw: String? = null,
         goalStartDate: LocalDate = LocalDate.now()
-    ): List<String> {
+    ): List<MemberMissionEntity> {
         val today = LocalDate.now()
 
         // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성
@@ -67,10 +67,10 @@ class GoalBasedMissionGenerationService(
             )
         }
 
-        memberMissionRepository.saveAll(missions)
-        logger.info("미션 생성 완료 - memberId: $memberId, 미션 수: ${missions.size}개")
+        val saved = memberMissionRepository.saveAll(missions)
+        logger.info("미션 생성 완료 - memberId: $memberId, 미션 수: ${saved.size}개")
 
-        return missionList.map { it.content }
+        return saved
     }
 
     /**
