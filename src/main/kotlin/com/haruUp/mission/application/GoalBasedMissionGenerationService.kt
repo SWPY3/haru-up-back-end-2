@@ -58,10 +58,10 @@ class GoalBasedMissionGenerationService(
                 difficulty = parsed.difficulty,
                 missionStatus = MissionStatus.ACTIVE,
                 expEarned = when (parsed.difficulty) {
-                    1 -> 10  // 하
-                    2 -> 20  // 중
-                    3 -> 30  // 상
-                    else -> 10
+                    1 -> 50   // 하
+                    2 -> 100  // 중
+                    3 -> 200  // 상
+                    else -> 50
                 },
                 targetDate = today
             )
