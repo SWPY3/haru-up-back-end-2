@@ -96,7 +96,7 @@ class MemberMissionUseCase(
     /**
      * 미션 완료 → 경험치 반영 → 레벨업 처리
      */
-    private fun handleMissionCompleted(memberMissionId: Long): MemberCharacterDto {
+    private fun handleMissionCompleted(memberMissionId: Long): MemberCharacterDto? {
 
         // ----------------------------------------------------------------------
         // 1) 미션 완료 처리
@@ -104,10 +104,13 @@ class MemberMissionUseCase(
         val missionCompleted = memberMissionService.updateMission(memberMissionId, MissionStatus.COMPLETED)
 
         // ----------------------------------------------------------------------
-        // 2) 선택된 캐릭터 조회
+        // 2) 선택된 캐릭터 조회 (없으면 경험치 지급 없이 완료만 처리)
         // ----------------------------------------------------------------------
         val mc = memberCharacterService.getSelectedCharacter(missionCompleted.memberId)
-            ?: throw IllegalStateException("선택된 캐릭터가 없습니다.")
+            ?: run {
+                logger.warn("캐릭터 없음 - 미션 완료만 처리 (경험치 미지급) memberId: ${missionCompleted.memberId}")
+                return null
+            }
 
         // ----------------------------------------------------------------------
         // 3) 현재 레벨 정보 조회
@@ -140,6 +143,7 @@ class MemberMissionUseCase(
 
         return updatedMc.toDto()
     }
+
 
     /**
      * 특정 관심사에 해당하는 미션 리셋 (soft delete)
