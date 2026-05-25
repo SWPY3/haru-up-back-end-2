@@ -1,7 +1,11 @@
 package com.haruUp.member.controller
 
+import com.haruUp.character.application.service.LevelService
+import com.haruUp.character.application.service.MemberCharacterService
+import com.haruUp.global.api.ApiResponse
 import com.haruUp.global.security.MemberPrincipal
 import com.haruUp.interest.dto.InterestsDto
+import com.haruUp.member.application.service.MemberProfileService
 import com.haruUp.member.application.useCase.CurationResult
 import com.haruUp.member.application.useCase.MemberCurationUseCase
 import com.haruUp.member.domain.dto.MemberProfileDto
@@ -10,6 +14,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import kotlinx.coroutines.runBlocking
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -22,8 +27,41 @@ import java.util.concurrent.Executor
 @RequestMapping("/api/member/curation")
 class MemberCurationController(
     private val memberCurationUseCase: MemberCurationUseCase,
+    private val memberCharacterService: MemberCharacterService,
+    private val memberProfileService: MemberProfileService,
+    private val levelService: LevelService,
     private val sseExecutor: Executor,
 ) {
+
+    /**
+     * 챗봇 온보딩 전용 초기 설정 API
+     * 캐릭터 생성 + 닉네임 저장만 처리 (관심사/직업 불필요)
+     */
+    @PostMapping("/chatbot-setup")
+    @Transactional
+    @Operation(
+        summary = "챗봇 온보딩 초기 설정",
+        description = "챗봇 플로우에서 캐릭터 생성과 닉네임만 등록합니다."
+    )
+    fun chatbotSetup(
+        @AuthenticationPrincipal principal: MemberPrincipal,
+        @RequestBody request: ChatbotSetupRequest
+    ): ApiResponse<String> {
+        // 캐릭터가 없는 경우에만 생성 (중복 방지)
+        if (memberCharacterService.getSelectedCharacter(principal.id) == null) {
+            val levelId = levelService.getInitialLevelId()
+            memberCharacterService.createInitial(principal.id, request.characterId, levelId)
+        }
+
+        // 닉네임만 저장
+        val profileDto = MemberProfileDto().apply {
+            memberId = principal.id
+            nickname = request.nickname
+        }
+        memberProfileService.curationUpdateProfile(principal.id, profileDto)
+
+        return ApiResponse.success("OK")
+    }
 
 
     @PostMapping("/initial", produces = ["text/event-stream"])
@@ -134,5 +172,13 @@ class MemberCurationController(
 
         @Schema(description = "관심사 경로 목록")
         val interests: List<InterestsDto>
+    )
+
+    @Schema(description = "챗봇 온보딩 초기 설정 요청")
+    data class ChatbotSetupRequest(
+        @Schema(description = "선택한 캐릭터 ID", example = "1")
+        val characterId: Long,
+        @Schema(description = "닉네임", example = "하루")
+        val nickname: String
     )
 }
