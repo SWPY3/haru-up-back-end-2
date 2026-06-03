@@ -52,7 +52,8 @@ data class MissionCandidateDto(
     val directFullPath: List<String>,  // 전체 경로 배열 ["대분류", "중분류", "소분류"]
     val difficulty: Int?,
     val expEarned: Int,
-    val targetDate: LocalDate
+    val targetDate: LocalDate,
+    val missionDescription: String? = null
 )
 
 data class MissionRecommendResult(
