@@ -80,7 +80,8 @@ class MissionRecommendService(
                 directFullPath = directFullPath,
                 difficulty = memberMission.difficulty,
                 expEarned = memberMission.expEarned,
-                targetDate = memberMission.targetDate
+                targetDate = memberMission.targetDate,
+                missionDescription = memberMission.missionDescription
             )
         }
 
