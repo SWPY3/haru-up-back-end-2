@@ -2,7 +2,7 @@ package com.haruUp.member.controller
 
 import com.haruUp.character.application.service.LevelService
 import com.haruUp.character.application.service.MemberCharacterService
-import com.haruUp.global.api.ApiResponse
+import com.haruUp.global.common.ApiResponse
 import com.haruUp.global.security.MemberPrincipal
 import com.haruUp.interest.dto.InterestsDto
 import com.haruUp.member.application.service.MemberProfileService
