@@ -56,7 +56,7 @@ class GoalBasedMissionGenerationService(
                 missionContent = parsed.content,
                 missionDescription = parsed.description,
                 difficulty = parsed.difficulty,
-                missionStatus = MissionStatus.ACTIVE,
+                missionStatus = MissionStatus.READY,
                 expEarned = when (parsed.difficulty) {
                     1 -> 50   // 하
                     2 -> 100  // 중
