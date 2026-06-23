@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.category.repository.JobDetailRepository
 import com.haruUp.category.repository.JobJpaRepository
 import com.haruUp.global.clova.MissionMemberProfile
+import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.interest.repository.InterestEmbeddingJpaRepository
 import com.haruUp.interest.repository.MemberInterestJpaRepository
 import com.haruUp.member.infrastructure.MemberProfileRepository
@@ -33,7 +34,9 @@ class MissionRecommendService(
     private val jobRepository: JobJpaRepository,
     private val jobDetailRepository: JobDetailRepository,
     private val memberInterestRepository: MemberInterestJpaRepository,
-    private val interestEmbeddingRepository: InterestEmbeddingJpaRepository
+    private val interestEmbeddingRepository: InterestEmbeddingJpaRepository,
+    private val memberGoalRepository: MemberGoalRepository,
+    private val goalBasedMissionGenerationService: GoalBasedMissionGenerationService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val TODAY_RETRY_TTL = Duration.ofHours(24)  // 24시간 후 자동 만료
@@ -108,6 +111,11 @@ class MissionRecommendService(
         memberInterestId: Long,
         excludeMemberMissionIds: List<Long>? = null
     ): MissionRecommendationResponse {
+        // 목표(챗봇) 기반 미션은 member_interest 가 없으므로 활성 목표로 재생성한다.
+        if (memberInterestId == GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID) {
+            return retryWithGoal(memberId)
+        }
+
         if (getRetryCount(memberId) >= 5) {
             throw IllegalArgumentException("재추천 횟수 초과: 최대 5회까지 가능합니다.")
         }
@@ -297,6 +305,54 @@ class MissionRecommendService(
     }
 
     /**
+     * 목표(챗봇) 기반 미션 재추천
+     *
+     * member_interest 가 없는 목표 기반 미션을 활성 목표 정보로 재생성한다.
+     * - 활성 목표 조회 → 오늘 미션 삭제 후 재생성(하3/중3/상3)
+     * - reset_mission_count(관심사) 대신 Redis 재추천 횟수만 증가
+     */
+    fun retryWithGoal(memberId: Long): MissionRecommendationResponse {
+        if (getRetryCount(memberId) >= 5) {
+            throw IllegalArgumentException("재추천 횟수 초과: 최대 5회까지 가능합니다.")
+        }
+
+        val activeGoal = memberGoalRepository.findByMemberIdAndIsActiveTrue(memberId)
+            ?: throw IllegalArgumentException("활성화된 목표가 없습니다. 챗봇으로 목표를 먼저 설정해주세요.")
+
+        val savedMissions = goalBasedMissionGenerationService.generateAndSaveMissions(
+            memberId = memberId,
+            goalText = activeGoal.goalText,
+            conversationSummary = activeGoal.conversationSummary,
+            conversationRaw = activeGoal.conversationRaw,
+            goalStartDate = activeGoal.createdAt?.toLocalDate() ?: LocalDate.now()
+        )
+
+        val responseMissionDtos = savedMissions.map { memberMission ->
+            com.haruUp.missionembedding.dto.MissionDto(
+                member_mission_id = memberMission.id,
+                content = memberMission.missionContent,
+                directFullPath = emptyList(),
+                difficulty = memberMission.difficulty,
+                expEarned = memberMission.expEarned,
+                createdType = "AI"
+            )
+        }
+
+        val missionGroup = com.haruUp.missionembedding.dto.MissionGroupDto(
+            memberInterestId = GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID.toInt(),
+            data = responseMissionDtos
+        )
+
+        logger.info("목표 기반 미션 재추천 성공: ${responseMissionDtos.size}개 - memberId: $memberId")
+
+        return MissionRecommendationResponse(
+            missions = listOf(missionGroup),
+            totalCount = responseMissionDtos.size,
+            retryCount = incrementRetryCount(memberId)
+        )
+    }
+
+    /**
      * 멤버 관심사 ID 목록 기반 미션 추천
      *
      * Controller와 Curation에서 공통으로 사용하는 미션 추천 로직
@@ -314,6 +370,17 @@ class MissionRecommendService(
         memberId: Long,
         memberInterestIds: List<Long>
     ): MissionRecommendationResponse {
+        val goalBasedInterestId = GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID
+        val includesGoalBasedInterest = goalBasedInterestId in memberInterestIds
+
+        require(!includesGoalBasedInterest || memberInterestIds.all { it == goalBasedInterestId }) {
+            "챗봇 목표 ID와 관심사 ID를 함께 요청할 수 없습니다."
+        }
+
+        if (includesGoalBasedInterest) {
+            return recommendGoalMissions(memberId)
+        }
+
         // 1. memberInterestIds 유효성 검증 및 조회
         val memberInterests = memberInterestIds.mapNotNull { memberInterestId ->
             val memberInterest = memberInterestRepository.findById(memberInterestId).orElse(null)
@@ -452,6 +519,44 @@ class MissionRecommendService(
         return MissionRecommendationResponse(
             missions = savedMissionGroups,
             totalCount = savedMissionGroups.sumOf { it.data.size }
+        )
+    }
+
+    /**
+     * 챗봇 완료 시 이미 생성된 오늘의 목표 기반 READY 미션을 반환한다.
+     *
+     * 최초 추천 API에서는 목표 기반 미션을 다시 생성하지 않는다.
+     */
+    private fun recommendGoalMissions(memberId: Long): MissionRecommendationResponse {
+        val goalBasedInterestId = GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID
+        val memberMissions = memberMissionRepository.findTodayMissions(
+            memberId = memberId,
+            memberInterestId = goalBasedInterestId,
+            targetDate = LocalDate.now(),
+            statuses = listOf(MissionStatus.READY)
+        )
+
+        val missionDtos = memberMissions.map { memberMission ->
+            com.haruUp.missionembedding.dto.MissionDto(
+                member_mission_id = memberMission.id,
+                content = memberMission.missionContent,
+                directFullPath = emptyList(),
+                difficulty = memberMission.difficulty,
+                expEarned = memberMission.expEarned,
+                createdType = "AI"
+            )
+        }
+
+        logger.info("목표 기반 오늘의 미션 조회: ${missionDtos.size}개 - memberId: $memberId")
+
+        return MissionRecommendationResponse(
+            missions = listOf(
+                com.haruUp.missionembedding.dto.MissionGroupDto(
+                    memberInterestId = goalBasedInterestId.toInt(),
+                    data = missionDtos
+                )
+            ),
+            totalCount = missionDtos.size
         )
     }
 
