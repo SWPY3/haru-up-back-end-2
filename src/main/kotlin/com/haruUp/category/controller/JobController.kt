@@ -7,6 +7,7 @@ import com.haruUp.global.security.MemberPrincipal
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -21,7 +22,7 @@ class JobController (
     }
 
     @GetMapping("/getJobDetailList")
-    fun getJobDetailList(@AuthenticationPrincipal principal: MemberPrincipal, jobId : Long) : List<JobDetailDto> {
+    fun getJobDetailList(@AuthenticationPrincipal principal: MemberPrincipal, @RequestParam jobId : Long) : List<JobDetailDto> {
         return jobUseCase.getJobDetail(jobId)
     }
 

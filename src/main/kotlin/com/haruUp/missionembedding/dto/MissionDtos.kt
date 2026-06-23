@@ -18,7 +18,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 @Schema(description = "미션 추천 요청")
 data class MissionRecommendationRequest(
     @Schema(
-        description = "멤버 관심사 ID 목록 (member_interest 테이블의 id)",
+        description = "멤버 관심사 ID 목록 (챗봇 목표 기반 미션 조회는 [0], 실제 관심사 ID와 혼합 불가)",
         example = "[1, 2, 3]",
         required = true
     )
@@ -134,7 +134,7 @@ data class SelectedMissionDto(
 @Schema(description = "오늘의 미션 추천 요청")
 data class TodayMissionRecommendationRequest(
     @Schema(
-        description = "멤버 관심사 ID (member_interest 테이블의 id)",
+        description = "멤버 관심사 ID (챗봇 목표 기반 미션 조회는 0)",
         example = "1",
         required = true
     )
@@ -151,7 +151,7 @@ data class TodayMissionRecommendationRequest(
 @Schema(description = "오늘의 미션 추천 요청")
 data class TodayMissionRetryRequest(
     @Schema(
-        description = "멤버 관심사 ID (member_interest 테이블의 id)",
+        description = "멤버 관심사 ID (챗봇 목표 기반 미션 재추천은 0)",
         example = "1",
         required = true
     )

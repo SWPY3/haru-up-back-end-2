@@ -343,6 +343,13 @@ class MemberMissionController(
               "excludeMemberMissionIds": [10, 11, 12]
             }
             ```
+
+            챗봇 목표 기반 미션 재추천:
+            ```json
+            {
+              "memberInterestId": 0
+            }
+            ```
         """
     )
     @RateLimit(key = "api:member:mission:retry", limit = 50)
