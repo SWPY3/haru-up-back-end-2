@@ -1,10 +1,10 @@
 package com.haruUp.interest.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.haruUp.global.clova.ClovaApiClient
-import com.haruUp.global.clova.ClovaApiResponse
-import com.haruUp.global.clova.ClovaMessage
-import com.haruUp.global.clova.ClovaResult
+import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.openai.OpenAiApiResponse
+import com.haruUp.global.openai.OpenAiMessage
+import com.haruUp.global.openai.OpenAiResult
 import com.haruUp.global.security.MemberPrincipal
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -41,7 +41,7 @@ class InterestValidationIntegrationTest {
      * 🔥 외부 AI 호출은 반드시 Mock
      */
     @MockBean
-    lateinit var clovaApiClient: ClovaApiClient
+    lateinit var openAiApiClient: OpenAiApiClient
 
     private val testPrincipal = MemberPrincipal(
         id = 101L,
@@ -56,7 +56,7 @@ class InterestValidationIntegrationTest {
         stringRedisTemplate.delete("typo-validation:block:${testPrincipal.id}")
 
         // 기본적으로 AI는 "true" 반환하도록 설정
-        given(clovaApiClient.chatCompletion(
+        given(openAiApiClient.chatCompletion(
             messages = any(),
             model = any(),
             maxTokens = any(),
@@ -66,10 +66,10 @@ class InterestValidationIntegrationTest {
             repeatPenalty = any(),
             seed = anyOrNull()
         )).willReturn(
-            ClovaApiResponse(
+            OpenAiApiResponse(
                 status = null,
-                result = ClovaResult(
-                    message = ClovaMessage(
+                result = OpenAiResult(
+                    message = OpenAiMessage(
                         role = "assistant",
                         content = "true"
                     )
@@ -152,7 +152,7 @@ class InterestValidationIntegrationTest {
     fun `관심사 검증 - AI 판단으로 실패`() {
 
         // AI 응답을 false로 변경
-        given(clovaApiClient.chatCompletion(
+        given(openAiApiClient.chatCompletion(
             messages = any(),
             model = any(),
             maxTokens = any(),
@@ -162,10 +162,10 @@ class InterestValidationIntegrationTest {
             repeatPenalty = any(),
             seed = anyOrNull()
         )).willReturn(
-            ClovaApiResponse(
+            OpenAiApiResponse(
                 status = null,
-                result = ClovaResult(
-                    message = ClovaMessage(
+                result = OpenAiResult(
+                    message = OpenAiMessage(
                         role = "assistant",
                         content = "false"
                     )
