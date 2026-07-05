@@ -1,4 +1,4 @@
-package com.haruUp.global.clova
+package com.haruUp.global.prompt
 
 object ChatbotQuestionPrompt {
 
