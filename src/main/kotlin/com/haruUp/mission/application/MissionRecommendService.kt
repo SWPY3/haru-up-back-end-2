@@ -3,7 +3,7 @@ package com.haruUp.mission.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.category.repository.JobDetailRepository
 import com.haruUp.category.repository.JobJpaRepository
-import com.haruUp.global.clova.MissionMemberProfile
+import com.haruUp.global.prompt.MissionMemberProfile
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.interest.repository.InterestEmbeddingJpaRepository
 import com.haruUp.interest.repository.MemberInterestJpaRepository

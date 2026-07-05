@@ -3,7 +3,7 @@ package com.haruUp.interest.repository
 import com.haruUp.interest.entity.InterestEmbeddingEntity
 import com.haruUp.interest.dto.InterestLevel
 import com.haruUp.interest.dto.InterestNode
-import com.haruUp.global.clova.ClovaEmbeddingClient
+import com.haruUp.global.openai.OpenAiEmbeddingClient
 import com.haruUp.global.util.PostgresArrayUtils.listToPostgresArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,12 +16,12 @@ import java.time.LocalDateTime
  *
  * - PostgreSQL + pgvector extension
  * - 코사인 유사도 기반 검색
- * - Clova Embedding (1024차원)
+ * - OpenAI Embedding (1024차원)
  */
 @Repository
 class PgVectorInterestRepository(
     private val embeddingJpaRepository: InterestEmbeddingJpaRepository,
-    private val clovaEmbeddingClient: ClovaEmbeddingClient
+    private val openAiEmbeddingClient: OpenAiEmbeddingClient
 ) : VectorInterestRepository {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -73,7 +73,7 @@ class PgVectorInterestRepository(
         return withContext(Dispatchers.IO) {
             try {
                 // 1. 쿼리 임베딩 생성
-                val queryEmbedding = clovaEmbeddingClient.createEmbedding(query)
+                val queryEmbedding = openAiEmbeddingClient.createEmbedding(query)
 
                 // 2. pgvector 검색
                 searchByVector(queryEmbedding, level, topK, minScore)
@@ -97,7 +97,7 @@ class PgVectorInterestRepository(
         return withContext(Dispatchers.IO) {
             try {
                 // 1. 여러 쿼리의 임베딩 생성
-                val embeddings = queries.map { clovaEmbeddingClient.createEmbedding(it) }
+                val embeddings = queries.map { openAiEmbeddingClient.createEmbedding(it) }
 
                 // 2. 임베딩 평균 계산
                 val avgEmbedding = averageEmbeddings(embeddings)
@@ -167,7 +167,7 @@ class PgVectorInterestRepository(
         return withContext(Dispatchers.IO) {
             try {
                 // 1. 쿼리 임베딩 생성
-                val queryEmbedding = clovaEmbeddingClient.createEmbedding(query)
+                val queryEmbedding = openAiEmbeddingClient.createEmbedding(query)
                 val vectorString = InterestEmbeddingEntity.vectorToString(queryEmbedding)
 
                 // 2. 하이브리드 스코어로 검색
@@ -202,7 +202,7 @@ class PgVectorInterestRepository(
         return withContext(Dispatchers.IO) {
             try {
                 // 1. 여러 쿼리의 임베딩 생성
-                val embeddings = queries.map { clovaEmbeddingClient.createEmbedding(it) }
+                val embeddings = queries.map { openAiEmbeddingClient.createEmbedding(it) }
 
                 // 2. 임베딩 평균 계산
                 val avgEmbedding = averageEmbeddings(embeddings)

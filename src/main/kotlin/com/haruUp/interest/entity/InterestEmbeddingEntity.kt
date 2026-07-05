@@ -46,7 +46,7 @@ class InterestEmbeddingEntity(
 
     /**
      * 임베딩 벡터 (pgvector type)
-     * Clova Embedding: 1024차원
+     * OpenAI Embedding: 1024차원
      * NULL 허용: 임베딩되지 않은 관심사
      */
     @Column(name = "embedding", columnDefinition = "vector(1024)")

@@ -29,7 +29,7 @@ class HybridInterestRecommendationService(
 
     companion object {
         private const val RAG_RATIO = 0.7  // RAG로 70% 추천 시도
-        private const val MIN_SIMILARITY_SCORE = 0.975f  // 최소 유사도 (Clova Embedding은 유사도가 매우 높음, 다른 대분류는 0.97 이하)
+        private const val MIN_SIMILARITY_SCORE = 0.975f  // 최소 유사도 (임베딩 모델 변경 시 재튜닝 필요)
     }
 
     /**

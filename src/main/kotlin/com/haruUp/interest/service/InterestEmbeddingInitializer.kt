@@ -3,7 +3,7 @@ package com.haruUp.interest.service
 import com.haruUp.interest.dto.InterestLevel
 import com.haruUp.interest.repository.InterestEmbeddingJpaRepository
 import com.haruUp.interest.repository.VectorInterestRepository
-import com.haruUp.global.clova.ClovaEmbeddingClient
+import com.haruUp.global.openai.OpenAiEmbeddingClient
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service
 @Service
 class InterestEmbeddingInitializer(
     private val vectorRepository: VectorInterestRepository,
-    private val clovaEmbeddingClient: ClovaEmbeddingClient,
+    private val openAiEmbeddingClient: OpenAiEmbeddingClient,
     private val embeddingJpaRepository: InterestEmbeddingJpaRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -66,7 +66,7 @@ class InterestEmbeddingInitializer(
                 logger.info("임베딩 생성: ${entity.name} (${entity.fullPath})")
                 logger.debug("임베딩 텍스트: $embeddingText")
 
-                val embedding = clovaEmbeddingClient.createEmbedding(embeddingText)
+                val embedding = openAiEmbeddingClient.createEmbedding(embeddingText)
 
                 if (embedding.isEmpty()) {
                     logger.error("임베딩 생성 실패 (빈 벡터): ${entity.name}")
@@ -146,7 +146,7 @@ class InterestEmbeddingInitializer(
                 }
 
                 val embeddingText = buildEmbeddingText(entity.name, entity.fullPath)
-                val embedding = clovaEmbeddingClient.createEmbedding(embeddingText)
+                val embedding = openAiEmbeddingClient.createEmbedding(embeddingText)
 
                 if (embedding.isEmpty()) {
                     failCount++
