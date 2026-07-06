@@ -62,7 +62,7 @@ openai:
   api:
     url: https://api.openai.com/v1
     key: ${OPENAI_API_KEY}
-    model: ${OPENAI_MODEL:gpt-5.5}
+    model: ${OPENAI_MODEL:gpt-5.4-mini}
     embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
     embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:1024}
 

@@ -202,7 +202,7 @@ class CurationChatbotUseCase(
         val raw = openAiApiClient.generateText(
             userMessage = userMessage,
             systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
-            model = OpenAiApiClient.MODEL_FAST,
+            model = OpenAiApiClient.MODEL_DEFAULT,
             temperature = 0.7
         ).trim()
         // "Q2: ", "Q3: " 등 번호 접두사가 붙어 나오는 경우 제거
@@ -250,7 +250,7 @@ class CurationChatbotUseCase(
 
         return openAiApiClient.chatCompletion(
             messages = messages,
-            model = OpenAiApiClient.MODEL_FAST,
+            model = OpenAiApiClient.MODEL_DEFAULT,
             temperature = 0.5
         ).result?.message?.content?.trim()
             ?: "목표 달성을 위한 대화를 완료했습니다."

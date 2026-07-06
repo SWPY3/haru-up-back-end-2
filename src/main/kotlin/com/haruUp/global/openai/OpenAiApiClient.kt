@@ -11,14 +11,13 @@ import org.springframework.web.client.RestClient
 @Component
 class OpenAiApiClient(
     private val openAiRestClient: RestClient,
-    @Value("\${openai.api.model:gpt-5.5}")
+    @Value("\${openai.api.model:gpt-5.4-mini}")
     private val defaultModel: String = MODEL_DEFAULT
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        const val MODEL_DEFAULT = "gpt-5.5"
-        const val MODEL_FAST = "gpt-4.1-mini"
+        const val MODEL_DEFAULT = "gpt-5.4-mini"
     }
 
     fun chatCompletion(
