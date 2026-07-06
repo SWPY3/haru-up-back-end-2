@@ -1,6 +1,7 @@
 package com.haruUp.global.error
 
 import com.haruUp.global.common.ApiResponse
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -13,6 +14,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
+    private val log = LoggerFactory.getLogger(javaClass)
+
     @ExceptionHandler(BusinessException::class)
     fun handleBusinessException(
         ex: BusinessException,
@@ -23,6 +26,8 @@ class GlobalExceptionHandler {
         if (request.getHeader("Accept")?.contains("text/event-stream") == true) {
             throw ex
         }
+
+        log.warn("BusinessException - {} {} : [{}] {}", request.method, request.requestURI, ex.errorCode, ex.message)
 
         val status = when (ex.errorCode) {
             ErrorCode.UNAUTHORIZED -> HttpStatus.UNAUTHORIZED
@@ -84,6 +89,8 @@ class GlobalExceptionHandler {
             throw ex
         }
 
+        log.warn("IllegalArgumentException - {} {} : {}", request.method, request.requestURI, ex.message)
+
         val body = ApiResponse.failure<Nothing>(ex.message ?: "잘못된 요청입니다.")
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
     }
@@ -112,6 +119,8 @@ class GlobalExceptionHandler {
             throw ex
         }
 
+        log.error("IllegalStateException - {} {} : {}", request.method, request.requestURI, ex.message, ex)
+
         val body = ApiResponse.failure<Nothing>(ex.message ?: "내부 서버 오류가 발생했습니다.")
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body)
     }
@@ -126,6 +135,8 @@ class GlobalExceptionHandler {
         if (request.getHeader("Accept")?.contains("text/event-stream") == true) {
             throw ex   // ← SSE는 컨트롤러/Emitter에서 처리
         }
+
+        log.error("Unhandled exception - {} {} : {}", request.method, request.requestURI, ex.message, ex)
 
         val body = ApiResponse.failure<Nothing>(ErrorCode.INTERNAL_SERVER_ERROR.message)
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body)
