@@ -64,6 +64,13 @@ data class MissionDto(
     val content: String,
 
     @Schema(
+        description = "미션 상세 설명 (목표 기반 미션에만 존재, 관심사 기반 미션은 null)",
+        example = "오늘 회사에서 14:50~15:10 사이, 편의점 가기 전에 물 1컵을 천천히 마시기.",
+        nullable = true
+    )
+    val missionDescription: String? = null,
+
+    @Schema(
         description = "직접 저장된 전체 경로 [대분류, 중분류, 소분류]",
         example = """["체력관리 및 운동", "헬스", "근력 키우기"]"""
     )

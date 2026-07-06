@@ -331,6 +331,7 @@ class MissionRecommendService(
             com.haruUp.missionembedding.dto.MissionDto(
                 member_mission_id = memberMission.id,
                 content = memberMission.missionContent,
+                missionDescription = memberMission.missionDescription,
                 directFullPath = emptyList(),
                 difficulty = memberMission.difficulty,
                 expEarned = memberMission.expEarned,
@@ -540,6 +541,7 @@ class MissionRecommendService(
             com.haruUp.missionembedding.dto.MissionDto(
                 member_mission_id = memberMission.id,
                 content = memberMission.missionContent,
+                missionDescription = memberMission.missionDescription,
                 directFullPath = emptyList(),
                 difficulty = memberMission.difficulty,
                 expEarned = memberMission.expEarned,
