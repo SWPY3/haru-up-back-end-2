@@ -48,8 +48,8 @@ class ApiLoggingFilter(
     }
 
     private fun isSseRequest(request: HttpServletRequest): Boolean {
-        return request.getHeader("Accept") == "text/event-stream" ||
-                request.requestURI.startsWith("/api/member/curation")
+        return request.getHeader("Accept")?.contains("text/event-stream") == true ||
+                request.requestURI == "/api/member/curation/initial"
     }
 
     private fun shouldSkip(request: HttpServletRequest): Boolean {

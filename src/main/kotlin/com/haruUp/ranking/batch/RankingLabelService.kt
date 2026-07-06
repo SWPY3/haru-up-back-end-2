@@ -202,7 +202,7 @@ class RankingLabelService(
             val response = openAiApiClient.generateText(
                 userMessage = prompt,
                 systemMessage = "당신은 미션 내용을 분석하여 대표 라벨(그룹명)을 생성하는 전문가입니다. 반드시 하나의 활동만 포함하는 라벨을 생성하세요. 관심사 하위 카테고리 수준으로 그룹화하기 좋은 이름을 만드세요. 동의어는 하나로 통일하세요.",
-                model = OpenAiApiClient.MODEL_FAST,
+                model = OpenAiApiClient.MODEL_DEFAULT,
                 temperature = 0.1,
                 seed = 42
             )
