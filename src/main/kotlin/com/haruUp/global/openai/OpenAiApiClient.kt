@@ -1,6 +1,7 @@
 package com.haruUp.global.openai
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -118,7 +119,7 @@ class OpenAiApiClient(
             instructions = instructions,
             input = input,
             maxOutputTokens = maxOutputTokens,
-            temperature = temperature,
+            temperature = temperature.takeIf { supportsTemperature(model) },
             text = OpenAiTextConfig()
         )
 
@@ -130,6 +131,15 @@ class OpenAiApiClient(
             ?: throw OpenAiApiException("OpenAI API response is null.")
 
         return extractOutputText(response)
+    }
+
+    // GPT-5 계열 및 o-시리즈(reasoning 모델)는 temperature 파라미터를 지원하지 않음
+    private fun supportsTemperature(model: String): Boolean {
+        val normalized = model.lowercase()
+        return !(normalized.startsWith("gpt-5") ||
+                normalized.startsWith("o1") ||
+                normalized.startsWith("o3") ||
+                normalized.startsWith("o4"))
     }
 
     private fun extractOutputText(response: OpenAiResponsesResponse): String {
@@ -153,13 +163,14 @@ data class ChatMessage(
     val content: String
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class OpenAiResponsesRequest(
     val model: String,
     val instructions: String? = null,
     val input: Any,
     @JsonProperty("max_output_tokens")
     val maxOutputTokens: Int,
-    val temperature: Double,
+    val temperature: Double? = null,
     val text: OpenAiTextConfig
 )
 
