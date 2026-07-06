@@ -6,9 +6,9 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import com.haruUp.interest.dto.InterestPath
 import com.haruUp.mission.domain.MissionExpCalculator
 import com.haruUp.missionembedding.dto.MissionDto
-import com.haruUp.global.clova.ClovaApiClient
-import com.haruUp.global.clova.ImprovedMissionRecommendationPrompt
-import com.haruUp.global.clova.MissionMemberProfile
+import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.prompt.ImprovedMissionRecommendationPrompt
+import com.haruUp.global.prompt.MissionMemberProfile
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -16,13 +16,13 @@ import org.springframework.stereotype.Service
  * 미션 추천 서비스
  *
  * LLM 기반 미션 추천
- * 1. Clova API로 미션 생성
+ * 1. OpenAI API로 미션 생성
  * 2. 난이도 검증 (중복/누락 체크)
  * 3. DTO 반환 (DB 저장은 호출자에서 처리)
  */
 @Service
 class MissionRecommendationService(
-    private val clovaApiClient: ClovaApiClient
+    private val openAiApiClient: OpenAiApiClient
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val objectMapper = jacksonObjectMapper()
@@ -140,7 +140,7 @@ class MissionRecommendationService(
 
         logger.debug("LLM 요청 (시도 $attempt)")
 
-        val response = clovaApiClient.generateText(
+        val response = openAiApiClient.generateText(
             userMessage = userMessage,
             systemMessage = ImprovedMissionRecommendationPrompt.SYSTEM_PROMPT,
             temperature = 0.3  // 안정적인 출력을 위해 낮은 temperature 사용

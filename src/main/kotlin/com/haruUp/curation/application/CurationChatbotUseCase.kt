@@ -6,9 +6,9 @@ import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
 import com.haruUp.curation.dto.ChatbotMissionDto
 import com.haruUp.curation.dto.ChatbotStartResponse
-import com.haruUp.global.clova.ClovaApiClient
-import com.haruUp.global.clova.ChatbotQuestionPrompt
-import com.haruUp.global.clova.ChatMessage
+import com.haruUp.global.openai.ChatMessage
+import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.prompt.ChatbotQuestionPrompt
 import com.haruUp.goal.domain.MemberGoal
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.mission.application.GoalBasedMissionGenerationService
@@ -22,7 +22,7 @@ import java.util.UUID
 @Service
 class CurationChatbotUseCase(
     private val redisTemplate: RedisTemplate<String, Any>,
-    private val clovaApiClient: ClovaApiClient,
+    private val openAiApiClient: OpenAiApiClient,
     private val memberGoalRepository: MemberGoalRepository,
     private val goalBasedMissionGenerationService: GoalBasedMissionGenerationService,
     private val objectMapper: ObjectMapper
@@ -188,7 +188,7 @@ class CurationChatbotUseCase(
     }
 
     /**
-     * Clova AI를 사용하여 꼬리질문을 생성합니다.
+     * OpenAI를 사용하여 꼬리질문을 생성합니다.
      */
     private fun generateFollowUpQuestion(goalText: String, history: List<String>): String {
         // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
@@ -199,10 +199,10 @@ class CurationChatbotUseCase(
         }
 
         val userMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
-        val raw = clovaApiClient.generateText(
+        val raw = openAiApiClient.generateText(
             userMessage = userMessage,
             systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
-            model = ClovaApiClient.MODEL_HCX_003,
+            model = OpenAiApiClient.MODEL_FAST,
             temperature = 0.7
         ).trim()
         // "Q2: ", "Q3: " 등 번호 접두사가 붙어 나오는 경우 제거
@@ -231,7 +231,7 @@ class CurationChatbotUseCase(
     }
 
     /**
-     * Clova AI를 사용하여 전체 대화를 요약합니다.
+     * OpenAI를 사용하여 전체 대화를 요약합니다.
      */
     private fun generateConversationSummary(goalText: String, history: List<String>): String {
         val conversationText = buildString {
@@ -248,9 +248,9 @@ class CurationChatbotUseCase(
             ChatMessage(role = "user", content = conversationText)
         )
 
-        return clovaApiClient.chatCompletion(
+        return openAiApiClient.chatCompletion(
             messages = messages,
-            model = ClovaApiClient.MODEL_HCX_003,
+            model = OpenAiApiClient.MODEL_FAST,
             temperature = 0.5
         ).result?.message?.content?.trim()
             ?: "목표 달성을 위한 대화를 완료했습니다."

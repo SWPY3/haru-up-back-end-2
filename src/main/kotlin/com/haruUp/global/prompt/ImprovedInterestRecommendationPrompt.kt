@@ -1,4 +1,4 @@
-package com.haruUp.global.clova
+package com.haruUp.global.prompt
 
 import com.haruUp.interest.dto.InterestPath
 import com.haruUp.member.domain.MemberProfile

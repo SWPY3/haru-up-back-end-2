@@ -6,7 +6,7 @@ import com.haruUp.interest.entity.InterestEmbeddingEntity
 import com.haruUp.interest.dto.InterestLevel
 import com.haruUp.interest.dto.InterestNode
 import com.haruUp.interest.dto.InterestPath
-import com.haruUp.global.clova.ClovaApiClient
+import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.member.domain.MemberProfile
 import com.haruUp.global.util.PostgresArrayUtils.listToPostgresArray
 import java.time.Period
@@ -22,7 +22,7 @@ import java.util.*
  */
 @Service
 class AIInterestRecommender(
-    private val clovaApiClient: ClovaApiClient,
+    private val openAiApiClient: OpenAiApiClient,
     private val embeddingRepository: com.haruUp.interest.repository.InterestEmbeddingJpaRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -53,7 +53,7 @@ class AIInterestRecommender(
         )
 
         try {
-            val response = clovaApiClient.generateText(
+            val response = openAiApiClient.generateText(
                 userMessage = prompt,
                 systemMessage = SYSTEM_PROMPT
             )

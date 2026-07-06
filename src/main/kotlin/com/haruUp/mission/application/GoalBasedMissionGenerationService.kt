@@ -1,8 +1,8 @@
 package com.haruUp.mission.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.haruUp.global.clova.ClovaApiClient
-import com.haruUp.global.clova.DailyMissionFromGoalPrompt
+import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
 import com.haruUp.mission.infrastructure.MemberMissionRepository
@@ -20,7 +20,7 @@ import java.time.temporal.ChronoUnit
 @Service
 class GoalBasedMissionGenerationService(
     private val memberMissionRepository: MemberMissionRepository,
-    private val clovaApiClient: ClovaApiClient,
+    private val openAiApiClient: OpenAiApiClient,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -47,7 +47,7 @@ class GoalBasedMissionGenerationService(
         )
 
         val conversationContext = conversationRaw ?: conversationSummary
-        val missionList = generateMissionsFromClova(memberId, goalText, conversationContext, goalStartDate)
+        val missionList = generateMissionsFromOpenAi(memberId, goalText, conversationContext, goalStartDate)
 
         val missions = missionList.map { parsed ->
             MemberMissionEntity(
@@ -74,11 +74,11 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * Clova AI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
+     * OpenAI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
      * @param conversationContext 대화 내용 (원본 또는 요약)
      * @return List<ParsedMission> (하3 + 중3 + 상3 = 9개 보장)
      */
-    private fun generateMissionsFromClova(
+    private fun generateMissionsFromOpenAi(
         memberId: Long,
         goalText: String,
         conversationContext: String,
@@ -100,10 +100,10 @@ class GoalBasedMissionGenerationService(
         var lastException: Exception? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
             try {
-                val rawResponse = clovaApiClient.generateText(
+                val rawResponse = openAiApiClient.generateText(
                     userMessage = userMessage,
                     systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
-                    model = ClovaApiClient.MODEL_HCX_007,
+                    model = OpenAiApiClient.MODEL_DEFAULT,
                     temperature = 0.5
                 ).trim()
 
@@ -142,12 +142,12 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * Clova 응답 JSON을 파싱하여 미션 목록을 반환합니다.
+     * OpenAI 응답 JSON을 파싱하여 미션 목록을 반환합니다.
      * 예: {"missions":[{"content":"미션1","description":"실행방법","difficulty":1}, ...]}
      */
     private fun parseMissions(rawResponse: String): List<ParsedMission> {
         return try {
-            // Clova가 마크다운 코드블록(```json ... ```)으로 감싸서 반환하는 경우 제거
+            // 모델이 마크다운 코드블록(```json ... ```)으로 감싸서 반환하는 경우 제거
             val cleaned = rawResponse
                 .replace(Regex("^```[a-zA-Z]*\\s*"), "")
                 .replace(Regex("```\\s*$"), "")
@@ -168,11 +168,11 @@ class GoalBasedMissionGenerationService(
             missions
         } catch (e: Exception) {
             logger.warn("미션 JSON 파싱 실패, 응답 원문: $rawResponse, 오류: ${e.message}")
-            throw IllegalArgumentException("Clova 응답 파싱 실패: ${e.message}", e)
+            throw IllegalArgumentException("OpenAI 응답 파싱 실패: ${e.message}", e)
         }
     }
 
-    /** Clova 파싱 결과를 담는 내부 데이터 클래스 */
+    /** OpenAI 파싱 결과를 담는 내부 데이터 클래스 */
     private data class ParsedMission(val content: String, val description: String, val difficulty: Int)
 
     companion object {

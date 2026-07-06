@@ -1,7 +1,7 @@
 package com.haruUp.global.util
 
-import com.haruUp.global.clova.ChatMessage
-import com.haruUp.global.clova.ClovaApiClient
+import com.haruUp.global.openai.ChatMessage
+import com.haruUp.global.openai.OpenAiApiClient
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Component
 import java.time.Duration
@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
 
 @Component
 class TypoValidationCheck(
-    private val clovaApiClient: ClovaApiClient,
+    private val openAiApiClient: OpenAiApiClient,
     private val stringRedisTemplate: StringRedisTemplate
 ) {
 
@@ -94,7 +94,7 @@ class TypoValidationCheck(
             """
 
         return try {
-            val response = clovaApiClient.chatCompletion(
+            val response = openAiApiClient.chatCompletion(
                 messages = listOf(
                     ChatMessage(role = "system", content = SYSTEM_PROMPT),
                     ChatMessage(role = "user", content = userPrompt)

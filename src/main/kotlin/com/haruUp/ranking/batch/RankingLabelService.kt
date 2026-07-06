@@ -1,7 +1,7 @@
 package com.haruUp.ranking.batch
 
-import com.haruUp.global.clova.ClovaApiClient
-import com.haruUp.global.clova.ClovaEmbeddingClient
+import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.openai.OpenAiEmbeddingClient
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.infrastructure.MemberMissionRepository
 import kotlinx.coroutines.runBlocking
@@ -24,8 +24,8 @@ import java.time.LocalDateTime
 @Service
 class RankingLabelService(
     private val memberMissionRepository: MemberMissionRepository,
-    private val clovaApiClient: ClovaApiClient,
-    private val clovaEmbeddingClient: ClovaEmbeddingClient
+    private val openAiApiClient: OpenAiApiClient,
+    private val openAiEmbeddingClient: OpenAiEmbeddingClient
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -62,7 +62,7 @@ class RankingLabelService(
         val embeddingText = buildEmbeddingText(missionContent, interestPath)
         val embedding = runBlocking {
             try {
-                clovaEmbeddingClient.createEmbedding(embeddingText)
+                openAiEmbeddingClient.createEmbedding(embeddingText)
             } catch (e: Exception) {
                 logger.error("임베딩 생성 실패: $embeddingText - ${e.message}")
                 null
@@ -199,10 +199,10 @@ class RankingLabelService(
         """.trimIndent()
 
         return try {
-            val response = clovaApiClient.generateText(
+            val response = openAiApiClient.generateText(
                 userMessage = prompt,
                 systemMessage = "당신은 미션 내용을 분석하여 대표 라벨(그룹명)을 생성하는 전문가입니다. 반드시 하나의 활동만 포함하는 라벨을 생성하세요. 관심사 하위 카테고리 수준으로 그룹화하기 좋은 이름을 만드세요. 동의어는 하나로 통일하세요.",
-                model = ClovaApiClient.MODEL_HCX_003,
+                model = OpenAiApiClient.MODEL_FAST,
                 temperature = 0.1,
                 seed = 42
             )
