@@ -518,7 +518,8 @@ class MissionRecommendService(
 
         return MissionRecommendationResponse(
             missions = savedMissionGroups,
-            totalCount = savedMissionGroups.sumOf { it.data.size }
+            totalCount = savedMissionGroups.sumOf { it.data.size },
+            retryCount = getRetryCount(memberId)
         )
     }
 
@@ -556,7 +557,8 @@ class MissionRecommendService(
                     data = missionDtos
                 )
             ),
-            totalCount = missionDtos.size
+            totalCount = missionDtos.size,
+            retryCount = getRetryCount(memberId)
         )
     }
 
