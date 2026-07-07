@@ -48,11 +48,13 @@ interface MemberMissionRepository :
 
     /**
      * 목표 기반 미션 재생성 시 기존 오늘 미션 삭제
+     * 이미 선택(ACTIVE)되거나 완료(COMPLETED)된 미션은 보존하기 위해 READY 상태만 대상으로 한다.
      */
-    fun deleteByMemberIdAndTargetDateAndMemberInterestId(
+    fun deleteByMemberIdAndTargetDateAndMemberInterestIdAndMissionStatus(
         memberId: Long,
         targetDate: LocalDate,
-        memberInterestId: Long
+        memberInterestId: Long,
+        missionStatus: MissionStatus
     )
 
     /**
