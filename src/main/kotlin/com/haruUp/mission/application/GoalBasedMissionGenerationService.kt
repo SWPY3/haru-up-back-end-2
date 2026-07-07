@@ -41,9 +41,9 @@ class GoalBasedMissionGenerationService(
     ): List<MemberMissionEntity> {
         val today = LocalDate.now()
 
-        // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성
-        memberMissionRepository.deleteByMemberIdAndTargetDateAndMemberInterestId(
-            memberId, today, GOAL_BASED_INTEREST_ID
+        // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성 (이미 선택된 미션은 보존하기 위해 READY 상태만 삭제)
+        memberMissionRepository.deleteByMemberIdAndTargetDateAndMemberInterestIdAndMissionStatus(
+            memberId, today, GOAL_BASED_INTEREST_ID, MissionStatus.READY
         )
 
         val conversationContext = conversationRaw ?: conversationSummary
