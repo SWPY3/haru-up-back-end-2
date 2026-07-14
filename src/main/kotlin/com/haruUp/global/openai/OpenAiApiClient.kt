@@ -85,13 +85,14 @@ class OpenAiApiClient(
         systemMessage: String? = null,
         model: String? = null,
         temperature: Double = 0.5,
-        seed: Int? = null
+        seed: Int? = null,
+        maxTokens: Int = 2048
     ): String {
         val outputText = createResponse(
             model = model ?: defaultModel,
             input = userMessage,
             instructions = systemMessage,
-            maxOutputTokens = 2048,
+            maxOutputTokens = maxTokens,
             temperature = temperature
         )
 
