@@ -24,18 +24,18 @@ object DailyMissionFromGoalPrompt {
   특정 유튜브/책/방법론 등을 명시하여 바로 실행할 수 있도록. 단, 앱을 설치해야되는 방법은 제외.
   예) "유튜브 '토익 독학 길잡이' 채널의 '[LC] 파트3,4 빈출 질문 유형 완전정복' 영상 시청 후 핵심 질문 패턴 5가지 메모하기"
 
-【난이도 기준 - 반드시 각 난이도 정확히 3개】
-- difficulty 1 (하) 3개: 5~15분, 의지력 없어도 가능, 오늘 컨디션이 최악이어도 할 수 있는 것
-- difficulty 2 (중) 3개: 30분~1시간, 집중력 필요, 적당한 노력 필요
-- difficulty 3 (상) 3개: 1~2시간, 오늘의 진짜 도전, 끝내면 성취감이 큰 것
+【난이도 기준 - 반드시 각 난이도 정확히 5개】
+- difficulty 1 (하) 5개: 5~15분, 의지력 없어도 가능, 오늘 컨디션이 최악이어도 할 수 있는 것
+- difficulty 2 (중) 5개: 30분~1시간, 집중력 필요, 적당한 노력 필요
+- difficulty 3 (상) 5개: 1~2시간, 오늘의 진짜 도전, 끝내면 성취감이 큰 것
 
 【출력 전 필수 자체 검수】
 출력하기 전에 반드시 확인하세요:
-- difficulty 1이 정확히 3개인가?
-- difficulty 2가 정확히 3개인가?
-- difficulty 3이 정확히 3개인가?
-- 총 9개인가?
-3+3+3=9개가 아니면 수정 후 출력하세요.
+- difficulty 1이 정확히 5개인가?
+- difficulty 2가 정확히 5개인가?
+- difficulty 3이 정확히 5개인가?
+- 총 15개인가?
+5+5+5=15개가 아니면 수정 후 출력하세요.
 
 【절대 규칙】
 1. 한국어만 사용
@@ -43,7 +43,7 @@ object DailyMissionFromGoalPrompt {
 3. 아래 형식 그대로 출력
 
 【출력 형식】
-{"missions":[{"content":"미션1 제목","description":"미션1 구체적 실행 방법","difficulty":1},{"content":"미션2 제목","description":"미션2 구체적 실행 방법","difficulty":1},{"content":"미션3 제목","description":"미션3 구체적 실행 방법","difficulty":1},{"content":"미션4 제목","description":"미션4 구체적 실행 방법","difficulty":2},{"content":"미션5 제목","description":"미션5 구체적 실행 방법","difficulty":2},{"content":"미션6 제목","description":"미션6 구체적 실행 방법","difficulty":2},{"content":"미션7 제목","description":"미션7 구체적 실행 방법","difficulty":3},{"content":"미션8 제목","description":"미션8 구체적 실행 방법","difficulty":3},{"content":"미션9 제목","description":"미션9 구체적 실행 방법","difficulty":3}]}
+{"missions":[{"content":"미션1 제목","description":"미션1 구체적 실행 방법","difficulty":1},{"content":"미션2 제목","description":"미션2 구체적 실행 방법","difficulty":1},{"content":"미션3 제목","description":"미션3 구체적 실행 방법","difficulty":1},{"content":"미션4 제목","description":"미션4 구체적 실행 방법","difficulty":1},{"content":"미션5 제목","description":"미션5 구체적 실행 방법","difficulty":1},{"content":"미션6 제목","description":"미션6 구체적 실행 방법","difficulty":2},{"content":"미션7 제목","description":"미션7 구체적 실행 방법","difficulty":2},{"content":"미션8 제목","description":"미션8 구체적 실행 방법","difficulty":2},{"content":"미션9 제목","description":"미션9 구체적 실행 방법","difficulty":2},{"content":"미션10 제목","description":"미션10 구체적 실행 방법","difficulty":2},{"content":"미션11 제목","description":"미션11 구체적 실행 방법","difficulty":3},{"content":"미션12 제목","description":"미션12 구체적 실행 방법","difficulty":3},{"content":"미션13 제목","description":"미션13 구체적 실행 방법","difficulty":3},{"content":"미션14 제목","description":"미션14 구체적 실행 방법","difficulty":3},{"content":"미션15 제목","description":"미션15 구체적 실행 방법","difficulty":3}]}
 """
 
     /**
@@ -76,7 +76,7 @@ object DailyMissionFromGoalPrompt {
             append("【사용자 목표】\n$goalText\n\n")
             append("【오늘 날짜 정보】\n$periodGuide\n\n")
             append("【사용자 상세 정보 (목표 설정 대화 전문)】\n$conversationContext\n\n")
-            append("위 사용자 정보를 철저히 분석하여 이 사람에게만 맞는 맞춤형 미션 9개를 설계하세요.\n")
+            append("위 사용자 정보를 철저히 분석하여 이 사람에게만 맞는 맞춤형 미션 15개를 설계하세요.\n")
             append("일반적인 미션이 아닌, 이 사람의 현재 상황·수준·오늘 일차에 딱 맞는 구체적인 미션이어야 합니다.\n")
             if (pastMissions.isNotEmpty()) {
                 append("\n【이미 제공한 미션 - 절대 반복 금지】\n")
