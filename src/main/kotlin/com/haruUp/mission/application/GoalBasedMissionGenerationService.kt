@@ -76,7 +76,7 @@ class GoalBasedMissionGenerationService(
     /**
      * OpenAI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
      * @param conversationContext 대화 내용 (원본 또는 요약)
-     * @return List<ParsedMission> (하3 + 중3 + 상3 = 9개 보장)
+     * @return List<ParsedMission> (하5 + 중5 + 상5 = 15개 보장)
      */
     private fun generateMissionsFromOpenAi(
         memberId: Long,
@@ -104,7 +104,8 @@ class GoalBasedMissionGenerationService(
                     userMessage = userMessage,
                     systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
                     model = OpenAiApiClient.MODEL_DEFAULT,
-                    temperature = 0.5
+                    temperature = 0.5,
+                    maxTokens = MISSION_GENERATION_MAX_TOKENS
                 ).trim()
 
                 val missions = parseMissions(rawResponse)
@@ -119,7 +120,8 @@ class GoalBasedMissionGenerationService(
                 val grouped = missions.groupBy { it.difficulty }
                 logger.warn(
                     "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                    "- 하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
+                    "- 기대: 난이도별 ${MISSIONS_PER_DIFFICULTY}개, 실제 " +
+                    "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
                     "- memberId: $memberId"
                 )
             } catch (e: Exception) {
@@ -129,16 +131,18 @@ class GoalBasedMissionGenerationService(
         }
 
         throw lastException ?: IllegalStateException(
-            "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포(하3+중3+상3)의 미션 생성 실패 - memberId: $memberId"
+            "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포(난이도별 ${MISSIONS_PER_DIFFICULTY}개)의 미션 생성 실패 - memberId: $memberId"
         )
     }
 
     /**
-     * 미션 난이도 분포가 하3, 중3, 상3인지 검증합니다.
+     * 미션 난이도 분포가 하/중/상 각각 [MISSIONS_PER_DIFFICULTY]개인지 검증합니다.
      */
     private fun validateDifficultyDistribution(missions: List<ParsedMission>): Boolean {
         val grouped = missions.groupBy { it.difficulty }
-        return grouped[1]?.size == 3 && grouped[2]?.size == 3 && grouped[3]?.size == 3
+        return grouped[1]?.size == MISSIONS_PER_DIFFICULTY &&
+            grouped[2]?.size == MISSIONS_PER_DIFFICULTY &&
+            grouped[3]?.size == MISSIONS_PER_DIFFICULTY
     }
 
     /**
@@ -177,6 +181,13 @@ class GoalBasedMissionGenerationService(
 
     companion object {
         const val GOAL_BASED_INTEREST_ID = 0L
+
+        /** 난이도(하/중/상)별로 생성할 미션 수. 프롬프트(DailyMissionFromGoalPrompt)의 개수와 반드시 일치해야 한다. */
+        const val MISSIONS_PER_DIFFICULTY = 5
+
         private const val MAX_MISSION_RETRY = 3
+
+        /** 난이도별 5개(총 15개) + 설명까지 잘리지 않고 응답받기 위한 출력 토큰 상한 */
+        private const val MISSION_GENERATION_MAX_TOKENS = 4096
     }
 }

@@ -308,7 +308,7 @@ class MissionRecommendService(
      * 목표(챗봇) 기반 미션 재추천
      *
      * member_interest 가 없는 목표 기반 미션을 활성 목표 정보로 재생성한다.
-     * - 활성 목표 조회 → 오늘 미션 삭제 후 재생성(하3/중3/상3)
+     * - 활성 목표 조회 → 오늘 미션 삭제 후 재생성(하5/중5/상5)
      * - reset_mission_count(관심사) 대신 Redis 재추천 횟수만 증가
      */
     fun retryWithGoal(memberId: Long): MissionRecommendationResponse {

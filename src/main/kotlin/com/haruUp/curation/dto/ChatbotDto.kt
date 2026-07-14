@@ -49,7 +49,7 @@ data class ChatbotCompleteResponse(
     @Schema(description = "사용자의 목표 텍스트")
     val goalText: String,
 
-    @Schema(description = "생성된 미션 목록 (하3 + 중3 + 상3 = 9개)")
+    @Schema(description = "생성된 미션 목록 (하5 + 중5 + 상5 = 15개)")
     val missions: List<ChatbotMissionDto>
 )
 
