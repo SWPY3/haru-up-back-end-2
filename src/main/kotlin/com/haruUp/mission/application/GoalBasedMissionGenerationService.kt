@@ -96,8 +96,11 @@ class GoalBasedMissionGenerationService(
         val dayNumber = ChronoUnit.DAYS.between(goalStartDate, LocalDate.now()).toInt().coerceAtLeast(0) + 1
 
         val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(goalText, conversationContext, pastMissions, dayNumber)
+        logger.info("미션 생성 프롬프트 - memberId: $memberId, D+$dayNumber, userMessage:\n$userMessage")
 
         var lastException: Exception? = null
+        // 난이도 분포는 맞지만 description 글자수만 미달인 결과 (전부 실패 시 fallback으로 사용)
+        var fallbackMissions: List<ParsedMission>? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
             try {
                 val rawResponse = openAiApiClient.generateText(
@@ -111,28 +114,60 @@ class GoalBasedMissionGenerationService(
                 val missions = parseMissions(rawResponse)
 
                 if (validateDifficultyDistribution(missions)) {
-                    if (attempt > 0) {
-                        logger.info("미션 난이도 분포 정상화 완료 (${attempt + 1}번째 시도) - memberId: $memberId")
+                    val shortDescriptions = missions.filter { it.description.length < MIN_DESCRIPTION_LENGTH }
+                    if (shortDescriptions.isEmpty()) {
+                        if (attempt > 0) {
+                            logger.info("미션 검증 통과 (${attempt + 1}번째 시도) - memberId: $memberId")
+                        }
+                        logGeneratedMissions(memberId, missions)
+                        return missions
                     }
-                    return missions
-                }
 
-                val grouped = missions.groupBy { it.difficulty }
-                logger.warn(
-                    "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                    "- 기대: 난이도별 ${MISSIONS_PER_DIFFICULTY}개, 실제 " +
-                    "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
-                    "- memberId: $memberId"
-                )
+                    fallbackMissions = missions
+                    logger.warn(
+                        "미션 description 글자수 미달 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                        "- ${MIN_DESCRIPTION_LENGTH}자 미만 ${shortDescriptions.size}개: " +
+                        shortDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
+                        " - memberId: $memberId"
+                    )
+                } else {
+                    val grouped = missions.groupBy { it.difficulty }
+                    logger.warn(
+                        "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                        "- 기대: 난이도별 ${MISSIONS_PER_DIFFICULTY}개, 실제 " +
+                        "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
+                        "- memberId: $memberId"
+                    )
+                }
             } catch (e: Exception) {
                 lastException = e
                 logger.warn("미션 생성 실패 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) - memberId: $memberId, 오류: ${e.message}")
             }
         }
 
+        // 난이도 분포까지 실패하면 예외, description 글자수만 미달이면 마지막 결과라도 사용
+        fallbackMissions?.let { missions ->
+            logger.warn(
+                "${MAX_MISSION_RETRY}회 시도 후에도 description ${MIN_DESCRIPTION_LENGTH}자 미만 미션이 남아 " +
+                "마지막 결과를 그대로 사용합니다 - memberId: $memberId"
+            )
+            logGeneratedMissions(memberId, missions)
+            return missions
+        }
+
         throw lastException ?: IllegalStateException(
             "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포(난이도별 ${MISSIONS_PER_DIFFICULTY}개)의 미션 생성 실패 - memberId: $memberId"
         )
+    }
+
+    /**
+     * 생성된 미션 전체 목록을 로그로 남깁니다. (프롬프트 결과 추적용)
+     */
+    private fun logGeneratedMissions(memberId: Long, missions: List<ParsedMission>) {
+        val formatted = missions.joinToString("\n") {
+            "[난이도 ${it.difficulty}] ${it.content} | ${it.description} (${it.description.length}자)"
+        }
+        logger.info("생성된 미션 목록 - memberId: $memberId, ${missions.size}개\n$formatted")
     }
 
     /**
@@ -184,6 +219,9 @@ class GoalBasedMissionGenerationService(
 
         /** 난이도(하/중/상)별로 생성할 미션 수. 프롬프트(DailyMissionFromGoalPrompt)의 개수와 반드시 일치해야 한다. */
         const val MISSIONS_PER_DIFFICULTY = 5
+
+        /** description 최소 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다. */
+        private const val MIN_DESCRIPTION_LENGTH = 20
 
         private const val MAX_MISSION_RETRY = 3
 
