@@ -138,6 +138,7 @@ class CurationChatbotUseCase(
                 goalText = updatedFirstAnswer,
                 history = allHistory
             )
+            logger.info("챗봇 대화 요약 생성 완료 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer, 요약: $conversationSummary")
 
             // 기존 활성 목표 비활성화
             memberGoalRepository.findByMemberIdAndIsActiveTrue(session.memberId)?.let { existingGoal ->
