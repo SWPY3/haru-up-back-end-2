@@ -9,6 +9,7 @@ import com.haruUp.curation.dto.ChatbotStartResponse
 import com.haruUp.global.openai.ChatMessage
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.prompt.ChatbotQuestionPrompt
+import com.haruUp.global.prompt.ChatbotSummaryPrompt
 import com.haruUp.goal.domain.MemberGoal
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.mission.application.GoalBasedMissionGenerationService
@@ -34,7 +35,10 @@ class CurationChatbotUseCase(
         private const val SESSION_TTL_MINUTES = 30L
         private const val TOTAL_QUESTIONS = 6
 
-        private const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요?\n도전하고 싶은 목표를 선택하거나 직접 입력해주세요."
+        /** 질문이 검증(한 정보 / 짧은 답변 / 문법)을 통과하지 못했을 때 재생성하는 최대 횟수 */
+        const val MAX_QUESTION_RETRY = 3
+
+        const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요?\n도전하고 싶은 목표를 선택하거나 직접 입력해주세요."
         private val FIRST_QUESTION_EXAMPLES = listOf(
             "🏋️‍♀️ 체중 감량 5kg",
             "🚭 금연하기",
@@ -42,12 +46,6 @@ class CurationChatbotUseCase(
             "📈 주식 수익률 월 1%"
         )
 
-        private const val SUMMARY_SYSTEM_PROMPT = """
-당신은 대화 요약 AI입니다.
-사용자와의 목표 관련 대화를 3~5문장으로 간결하게 요약해주세요.
-요약에는 사용자의 목표, 현재 상황, 생활 패턴, 어려운 점이 포함되어야 합니다.
-요약문만 출력하세요 (설명이나 제목 없이).
-"""
     }
 
     /**
@@ -102,11 +100,12 @@ class CurationChatbotUseCase(
         val updatedHistory = session.history.toMutableList().also { it.add(request.answer) }
 
         return if (session.questionCount < TOTAL_QUESTIONS) {
-            // 꼬리질문 생성
-            val nextQuestion = generateFollowUpQuestion(
+            // 꼬리질문 생성 (질문 + 예시 답변 3개)
+            val next = generateFollowUpQuestion(
                 goalText = updatedFirstAnswer,
                 history = updatedHistory
             )
+            val nextQuestion = next.question
             val nextQuestionCount = session.questionCount + 1
             val isLast = nextQuestionCount == TOTAL_QUESTIONS
 
@@ -126,6 +125,7 @@ class CurationChatbotUseCase(
             ChatbotAnswerResponse(
                 sessionId = request.sessionId,
                 question = nextQuestion,
+                examples = next.examples,
                 questionNumber = nextQuestionCount,
                 isLast = isLast
             )
@@ -189,9 +189,15 @@ class CurationChatbotUseCase(
     }
 
     /**
-     * OpenAI를 사용하여 꼬리질문을 생성합니다.
+     * OpenAI를 사용하여 꼬리질문과 예시 답변 3개를 생성합니다.
+     *
+     * 생성 결과가 [ChatbotQuestionValidator] 검증(한 질문 = 한 정보 / 30자 이내 답변 가능 / 한국어 문법 /
+     * 예시 답변 3개)을 통과하지 못하면 탈락 사유를 프롬프트에 덧붙여 최대 [MAX_QUESTION_RETRY]회까지 재생성합니다.
      */
-    private fun generateFollowUpQuestion(goalText: String, history: List<String>): String {
+    private fun generateFollowUpQuestion(
+        goalText: String,
+        history: List<String>
+    ): ChatbotQuestionValidator.ParsedQuestion {
         // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
         // Q1(고정 첫 질문) + 이미 생성된 AI 질문들을 중복 방지 목록으로 전달
         val previousQuestions = buildList {
@@ -199,15 +205,48 @@ class CurationChatbotUseCase(
             history.filterIndexed { index, _ -> index % 2 == 1 }.forEach { add(it) }
         }
 
-        val userMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
-        val raw = openAiApiClient.generateText(
-            userMessage = userMessage,
-            systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
-            model = OpenAiApiClient.MODEL_DEFAULT,
-            temperature = 0.7
-        ).trim()
-        // "Q2: ", "Q3: " 등 번호 접두사가 붙어 나오는 경우 제거
-        return raw.replace(Regex("^Q\\d+[:.\\s]+"), "")
+        val baseUserMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
+
+        // 검증에 모두 실패했을 때 사용할 후보 (질문 1개로 잘라낸 형태)
+        var fallback: ChatbotQuestionValidator.ParsedQuestion? = null
+        var retryHint = ""
+
+        repeat(MAX_QUESTION_RETRY) { attempt ->
+            val raw = openAiApiClient.generateText(
+                userMessage = baseUserMessage + retryHint,
+                systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
+                model = OpenAiApiClient.MODEL_DEFAULT,
+                temperature = 0.7
+            ).trim()
+
+            val parsed = ChatbotQuestionValidator.parse(raw)
+            if (parsed.question.isBlank()) {
+                logger.warn("꼬리질문 생성 결과가 비어 있음 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) - 원문: \"$raw\"")
+                return@repeat
+            }
+
+            val violation = ChatbotQuestionValidator.findViolation(parsed)
+            // 여러 질문이 붙어 나온 경우를 대비해 항상 첫 번째 질문까지만 사용
+            val result = parsed.copy(question = ChatbotQuestionValidator.takeFirstQuestion(parsed.question))
+
+            if (violation == null) {
+                if (attempt > 0) {
+                    logger.info("꼬리질문 검증 통과 (${attempt + 1}번째 시도) - 질문: \"${result.question}\"")
+                }
+                return result
+            }
+
+            fallback = result
+            retryHint = ChatbotQuestionPrompt.buildRetryHint(raw, violation)
+            logger.warn(
+                "꼬리질문 검증 실패 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) " +
+                "- 사유: $violation, 질문: \"${parsed.question}\", 예시: ${parsed.examples}"
+            )
+        }
+
+        return fallback?.also {
+            logger.warn("${MAX_QUESTION_RETRY}회 시도 후에도 검증을 통과하지 못해 마지막 질문을 사용합니다 - 질문: \"${it.question}\"")
+        } ?: throw IllegalStateException("${MAX_QUESTION_RETRY}회 시도 후에도 꼬리질문 생성에 실패했습니다.")
     }
 
     /**
@@ -235,17 +274,10 @@ class CurationChatbotUseCase(
      * OpenAI를 사용하여 전체 대화를 요약합니다.
      */
     private fun generateConversationSummary(goalText: String, history: List<String>): String {
-        val conversationText = buildString {
-            append("사용자 목표: $goalText\n\n")
-            append("대화 내용:\n")
-            history.forEachIndexed { index, text ->
-                val prefix = if (index % 2 == 0) "답변" else "질문"
-                append("$prefix: $text\n")
-            }
-        }
+        val conversationText = ChatbotSummaryPrompt.buildConversationText(goalText, history)
 
         val messages = listOf(
-            ChatMessage(role = "system", content = SUMMARY_SYSTEM_PROMPT),
+            ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
             ChatMessage(role = "user", content = conversationText)
         )
 

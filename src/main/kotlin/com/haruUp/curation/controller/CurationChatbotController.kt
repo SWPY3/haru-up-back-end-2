@@ -35,7 +35,7 @@ class CurationChatbotController(
         summary = "챗봇 답변 제출",
         description = """
             사용자의 답변을 제출합니다.
-            - 1~5번 답변: 다음 꼬리질문 반환 (ChatbotAnswerResponse)
+            - 1~5번 답변: 다음 꼬리질문 반환 (ChatbotAnswerResponse) — question과 함께 examples(예시 답변 3개) 포함, 사용자가 골라서 답할 수 있음
             - 6번 답변: 목표 저장 + 미션 생성 완료 응답 반환 (ChatbotCompleteResponse) — missions 필드에 15개 미션 포함
         """
     )
