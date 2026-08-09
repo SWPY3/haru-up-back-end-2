@@ -3,6 +3,7 @@ package com.haruUp.mission.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
+import com.haruUp.global.util.KoreanGrammarChecker
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
 import com.haruUp.mission.infrastructure.MemberMissionRepository
@@ -41,13 +42,20 @@ class GoalBasedMissionGenerationService(
     ): List<MemberMissionEntity> {
         val today = LocalDate.now()
 
+        // 중복 방지 목록은 반드시 삭제 "전"에 조회한다.
+        // 재추천(retryWithGoal)은 오늘의 READY 미션을 지우고 다시 생성하는데,
+        // 삭제 후에 조회하면 방금 추천했던 미션이 목록에서 빠져 같은 미션이 다시 나온다.
+        val pastMissionContents = findPastMissionContents(memberId, goalStartDate)
+
         // 오늘 이미 생성된 미션이 있으면 삭제 후 재생성 (이미 선택된 미션은 보존하기 위해 READY 상태만 삭제)
         memberMissionRepository.deleteByMemberIdAndTargetDateAndMemberInterestIdAndMissionStatus(
             memberId, today, GOAL_BASED_INTEREST_ID, MissionStatus.READY
         )
 
         val conversationContext = conversationRaw ?: conversationSummary
-        val missionList = generateMissionsFromOpenAi(memberId, goalText, conversationContext, goalStartDate)
+        val missionList = generateMissionsFromOpenAi(
+            memberId, goalText, conversationContext, goalStartDate, pastMissionContents
+        )
 
         val missions = missionList.map { parsed ->
             MemberMissionEntity(
@@ -74,23 +82,32 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
+     * 현재 목표 시작일 이후에 이미 제공한 미션 제목을 조회합니다. (이전 목표 미션은 제외)
+     * 반드시 오늘의 READY 미션을 삭제하기 전에 호출해야 재추천 시 중복을 막을 수 있습니다.
+     */
+    private fun findPastMissionContents(memberId: Long, goalStartDate: LocalDate): List<String> {
+        return memberMissionRepository
+            .findByMemberIdAndMemberInterestIdAndTargetDateGreaterThanEqual(
+                memberId, GOAL_BASED_INTEREST_ID, goalStartDate
+            )
+            .map { it.missionContent }
+            .distinct()
+    }
+
+    /**
      * OpenAI로 미션 목록을 생성합니다. 난이도 분포가 올바르지 않으면 최대 3회 재시도합니다.
      * @param conversationContext 대화 내용 (원본 또는 요약)
+     * @param pastMissions 이미 제공한 미션 제목 (중복 방지용, 삭제 전에 조회한 값)
      * @return List<ParsedMission> (하5 + 중5 + 상5 = 15개 보장)
      */
     private fun generateMissionsFromOpenAi(
         memberId: Long,
         goalText: String,
         conversationContext: String,
-        goalStartDate: LocalDate
+        goalStartDate: LocalDate,
+        pastMissions: List<String>
     ): List<ParsedMission> {
-        // 현재 목표 시작일 이후의 미션만 중복 방지에 포함 (이전 목표 미션은 제외)
-        val pastMissions = memberMissionRepository
-            .findByMemberIdAndMemberInterestIdAndTargetDateGreaterThanEqual(
-                memberId, GOAL_BASED_INTEREST_ID, goalStartDate
-            )
-            .map { it.missionContent }
-            .distinct()
+        val pastMissionSet = pastMissions.toSet()
 
         // 목표 시작일로부터 오늘이 몇 일차인지 계산 (최소 1일차)
         val dayNumber = ChronoUnit.DAYS.between(goalStartDate, LocalDate.now()).toInt().coerceAtLeast(0) + 1
@@ -115,7 +132,14 @@ class GoalBasedMissionGenerationService(
 
                 if (validateDifficultyDistribution(missions)) {
                     val shortDescriptions = missions.filter { it.description.length < MIN_DESCRIPTION_LENGTH }
-                    if (shortDescriptions.isEmpty()) {
+                    val longDescriptions = missions.filter { it.description.length > MAX_DESCRIPTION_LENGTH }
+                    val grammarViolations = findGrammarViolations(missions)
+                    // 프롬프트로 "반복 금지"를 지시해도 모델이 같은 미션을 다시 내는 경우가 있어 코드로도 막는다
+                    val duplicated = missions.filter { it.content in pastMissionSet }
+
+                    if (shortDescriptions.isEmpty() && longDescriptions.isEmpty() &&
+                        grammarViolations.isEmpty() && duplicated.isEmpty()
+                    ) {
                         if (attempt > 0) {
                             logger.info("미션 검증 통과 (${attempt + 1}번째 시도) - memberId: $memberId")
                         }
@@ -123,13 +147,42 @@ class GoalBasedMissionGenerationService(
                         return missions
                     }
 
-                    fallbackMissions = missions
-                    logger.warn(
-                        "미션 description 글자수 미달 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                        "- ${MIN_DESCRIPTION_LENGTH}자 미만 ${shortDescriptions.size}개: " +
-                        shortDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
-                        " - memberId: $memberId"
-                    )
+                    // 전부 실패하면 가장 덜 어긋난 결과를 쓰기 위해 위반 수가 적은 쪽을 남긴다
+                    if (fallbackMissions == null ||
+                        countViolations(missions, pastMissionSet) < countViolations(fallbackMissions!!, pastMissionSet)
+                    ) {
+                        fallbackMissions = missions
+                    }
+                    if (duplicated.isNotEmpty()) {
+                        logger.warn(
+                            "이미 제공한 미션과 중복 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                            "- ${duplicated.size}개: " + duplicated.joinToString { "\"${it.content}\"" } +
+                            " - memberId: $memberId"
+                        )
+                    }
+                    if (shortDescriptions.isNotEmpty()) {
+                        logger.warn(
+                            "미션 description 글자수 미달 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                            "- ${MIN_DESCRIPTION_LENGTH}자 미만 ${shortDescriptions.size}개: " +
+                            shortDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
+                            " - memberId: $memberId"
+                        )
+                    }
+                    if (longDescriptions.isNotEmpty()) {
+                        logger.warn(
+                            "미션 description 글자수 초과 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                            "- ${MAX_DESCRIPTION_LENGTH}자 초과 ${longDescriptions.size}개: " +
+                            longDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
+                            " - memberId: $memberId"
+                        )
+                    }
+                    if (grammarViolations.isNotEmpty()) {
+                        logger.warn(
+                            "미션 한국어 문법 오류 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                            "- ${grammarViolations.size}개: " + grammarViolations.joinToString("; ") +
+                            " - memberId: $memberId"
+                        )
+                    }
                 } else {
                     val grouped = missions.groupBy { it.difficulty }
                     logger.warn(
@@ -145,11 +198,11 @@ class GoalBasedMissionGenerationService(
             }
         }
 
-        // 난이도 분포까지 실패하면 예외, description 글자수만 미달이면 마지막 결과라도 사용
+        // 난이도 분포까지 실패하면 예외, 글자수/문법/중복만 어긋나면 가장 덜 어긋난 결과라도 사용
         fallbackMissions?.let { missions ->
             logger.warn(
-                "${MAX_MISSION_RETRY}회 시도 후에도 description ${MIN_DESCRIPTION_LENGTH}자 미만 미션이 남아 " +
-                "마지막 결과를 그대로 사용합니다 - memberId: $memberId"
+                "${MAX_MISSION_RETRY}회 시도 후에도 글자수·문법·중복 검증을 통과하지 못해 " +
+                "가장 위반이 적은 결과를 사용합니다 (위반 ${countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
             )
             logGeneratedMissions(memberId, missions)
             return missions
@@ -168,6 +221,32 @@ class GoalBasedMissionGenerationService(
             "[난이도 ${it.difficulty}] ${it.content} | ${it.description} (${it.description.length}자)"
         }
         logger.info("생성된 미션 목록 - memberId: $memberId, ${missions.size}개\n$formatted")
+    }
+
+    /**
+     * description 글자수 기준을 벗어나거나 이미 제공한 미션과 중복되는 건수를 셉니다.
+     * 재시도가 모두 실패했을 때 가장 덜 어긋난 결과를 고르는 데 사용합니다.
+     */
+    private fun countViolations(missions: List<ParsedMission>, pastMissionSet: Set<String>): Int {
+        return missions.count {
+            it.description.length !in MIN_DESCRIPTION_LENGTH..MAX_DESCRIPTION_LENGTH ||
+                it.content in pastMissionSet
+        }
+    }
+
+    /**
+     * 생성된 미션의 제목/설명에서 명백한 한국어 문법 오류를 찾아 사유 목록으로 반환합니다.
+     * 사용자에게 그대로 노출되는 문장이므로 오류가 있으면 재생성합니다.
+     */
+    private fun findGrammarViolations(missions: List<ParsedMission>): List<String> {
+        return missions.flatMap { mission ->
+            listOfNotNull(
+                KoreanGrammarChecker.findViolation(mission.content)
+                    ?.let { "content \"${mission.content}\" - $it" },
+                KoreanGrammarChecker.findViolation(mission.description)
+                    ?.let { "description \"${mission.description}\" - $it" }
+            )
+        }
     }
 
     /**
@@ -222,6 +301,12 @@ class GoalBasedMissionGenerationService(
 
         /** description 최소 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다. */
         private const val MIN_DESCRIPTION_LENGTH = 20
+
+        /**
+         * description 최대 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다.
+         * UI 표시 폭이 넓어지면 이 값과 프롬프트의 기준을 함께 올리면 된다.
+         */
+        private const val MAX_DESCRIPTION_LENGTH = 30
 
         private const val MAX_MISSION_RETRY = 3
 

@@ -34,6 +34,12 @@ data class ChatbotAnswerResponse(
     @Schema(description = "다음 질문")
     val question: String,
 
+    @Schema(
+        description = "예시 답변 목록 (사용자가 직접 입력하지 않고 골라서 답할 수 있도록 제공, 보통 3개)",
+        example = "[\"10분 이내\", \"30분 정도\", \"1시간 이상\"]"
+    )
+    val examples: List<String>,
+
     @Schema(description = "현재 질문 번호", example = "2")
     val questionNumber: Int,
 
