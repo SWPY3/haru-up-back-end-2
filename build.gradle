@@ -132,7 +132,40 @@ springBoot {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    // 실제 OpenAI API를 호출하는 큐레이션 평가는 일반 테스트에서 제외한다. (curationEval 태스크로 실행)
+    useJUnitPlatform {
+        excludeTags 'curation-eval'
+    }
+}
+
+// 큐레이션 프롬프트 자동 평가 (실제 OpenAI API 호출 → build/curation-eval 리포트 생성)
+//   ./gradlew curationEval
+//   ./gradlew curationEval -Ppersonas=diet,toeic -Psessions=2
+tasks.register('curationEval', Test) {
+    group = 'verification'
+    description = '큐레이션 챗봇 질문/미션 프롬프트를 실제 API로 실행하고 결과 리포트를 생성'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'curation-eval'
+    }
+
+    systemProperty 'curation.personas', findProperty('personas') ?: ''
+    systemProperty 'curation.sessions', findProperty('sessions') ?: '1'
+    if (System.getenv('OPENAI_API_KEY')) {
+        environment 'OPENAI_API_KEY', System.getenv('OPENAI_API_KEY')
+    }
+    if (System.getenv('OPENAI_MODEL')) {
+        environment 'OPENAI_MODEL', System.getenv('OPENAI_MODEL')
+    }
+
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+        events 'passed', 'failed'
+        exceptionFormat = 'full'
+    }
 }
 
 // 관심사 임베딩 초기화 태스크
