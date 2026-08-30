@@ -1,6 +1,8 @@
 package com.haruUp.curation.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.haruUp.character.application.CharacterUseCase
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
@@ -30,6 +32,7 @@ class CurationChatbotUseCase(
     private val openAiApiClient: OpenAiApiClient,
     private val memberGoalRepository: MemberGoalRepository,
     private val goalBasedMissionGenerationService: GoalBasedMissionGenerationService,
+    private val characterUseCase: CharacterUseCase,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -60,12 +63,16 @@ class CurationChatbotUseCase(
         /** 질문이 검증(한 정보 / 짧은 답변 / 문법)을 통과하지 못했을 때 재생성하는 최대 횟수 */
         const val MAX_QUESTION_RETRY = 3
 
-        /** 챗봇이 사용자에게 자신을 가리킬 때 쓰는 캐릭터 이름 */
-        private const val CHARACTER_NAME = "하루"
-
-        const val FIRST_QUESTION =
+        /**
+         * 첫 질문 문구를 회원이 고른 캐릭터 이름으로 만든다.
+         * 캐릭터를 고르지 않았으면 기본 이름이 들어간다.
+         */
+        fun firstQuestion(characterName: String) =
             "이루고 싶은 목표 한 개를 직접 입력해주세요.\n" +
-            "자세하게 작성할수록 ${CHARACTER_NAME}가 더 정확한 질문을 할 수 있어요."
+            "자세하게 작성할수록 ${characterName}가 더 정확한 질문을 할 수 있어요."
+
+        /** 캐릭터를 고르지 않은 경우의 첫 질문. 이전 세션 호환과 평가 하네스에서 쓴다. */
+        val FIRST_QUESTION = firstQuestion(CharacterUseCase.DEFAULT_CHARACTER_NAME)
 
         /**
          * 첫 질문 입력란의 placeholder.
@@ -98,11 +105,17 @@ class CurationChatbotUseCase(
         val sessionId = UUID.randomUUID().toString()
         val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
 
+        // 캐릭터 이름과 성격은 세션 시작 시 한 번만 조회해 세션에 담아 둔다.
+        val profile = characterUseCase.getCurationProfile(memberId)
+        val firstQuestionText = firstQuestion(profile.name)
+
         val session = ChatbotSession(
             memberId = memberId,
             questionCount = 1,
             history = mutableListOf(),
-            firstAnswer = ""
+            firstAnswer = "",
+            personality = profile.personality,
+            firstQuestionText = firstQuestionText
         )
 
         redisTemplate.opsForValue().set(
@@ -111,11 +124,14 @@ class CurationChatbotUseCase(
             Duration.ofMinutes(SESSION_TTL_MINUTES)
         )
 
-        logger.info("챗봇 세션 시작 - memberId: $memberId, sessionId: $sessionId")
+        logger.info(
+            "챗봇 세션 시작 - memberId: $memberId, sessionId: $sessionId, " +
+            "캐릭터: ${profile.name}, 성격: ${profile.personality}"
+        )
 
         return ChatbotStartResponse(
             sessionId = sessionId,
-            question = FIRST_QUESTION,
+            question = firstQuestionText,
             examples = emptyList(),
             placeholder = FIRST_QUESTION_PLACEHOLDER,
             questionNumber = 1
@@ -250,7 +266,9 @@ class CurationChatbotUseCase(
         val next = generateFollowUpQuestion(
             goalText = session.firstAnswer,
             history = history,
-            canFinish = canFinish
+            canFinish = canFinish,
+            personality = session.personality,
+            firstQuestionText = session.firstQuestionText ?: FIRST_QUESTION
         )
 
         if (next.sufficient) {
@@ -354,7 +372,7 @@ class CurationChatbotUseCase(
             memberGoalRepository.save(existingGoal)
         }
 
-        val conversationRaw = buildConversationRaw(history)
+        val conversationRaw = buildConversationRaw(history, session.firstQuestionText ?: FIRST_QUESTION)
 
         val memberGoal = MemberGoal(
             memberId = session.memberId,
@@ -426,17 +444,20 @@ class CurationChatbotUseCase(
     private fun generateFollowUpQuestion(
         goalText: String,
         history: List<String>,
-        canFinish: Boolean
+        canFinish: Boolean,
+        personality: CharacterPersonality?,
+        firstQuestionText: String
     ): ChatbotQuestionValidator.ParsedQuestion {
         // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
         // Q1(고정 첫 질문) + 이미 생성된 AI 질문들을 중복 방지 목록으로 전달
         val previousQuestions = buildList {
-            add(FIRST_QUESTION)
+            add(firstQuestionText)
             history.filterIndexed { index, _ -> index % 2 == 1 }.forEach { add(it) }
         }
 
-        val baseUserMessage =
-            ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions, canFinish)
+        val baseUserMessage = ChatbotQuestionPrompt.buildUserMessage(
+            goalText, history, previousQuestions, canFinish, personality
+        )
 
         // 검증에 모두 실패했을 때 사용할 후보 (질문 1개로 잘라낸 형태)
         var fallback: ChatbotQuestionValidator.ParsedQuestion? = null
@@ -488,9 +509,9 @@ class CurationChatbotUseCase(
      * finalHistory 구조: [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5, Q6, A6]
      * 시간 투자가 필요한 목표면 뒤에 [Q7(투자 가능 시간), A7]이 더 붙는다.
      */
-    private fun buildConversationRaw(finalHistory: List<String>): String {
+    private fun buildConversationRaw(finalHistory: List<String>, firstQuestionText: String): String {
         return buildString {
-            append("Q1: $FIRST_QUESTION\n")
+            append("Q1: $firstQuestionText\n")
             finalHistory.forEachIndexed { index, text ->
                 if (index % 2 == 0) {
                     // 사용자 답변 (index 0, 2, 4, 6, 8)
@@ -590,5 +611,14 @@ data class ChatbotSession(
      * 마무리 확인 화면에 보여준 요약.
      * 사용자가 그대로 마무리를 선택하면 재생성하지 않고 이 값을 그대로 쓴다.
      */
-    val pendingSummary: ConversationSummaryParser.ConversationSummaries? = null
+    val pendingSummary: ConversationSummaryParser.ConversationSummaries? = null,
+
+    /** 꼬리질문 말투에 반영할 AI 성격. 세션 시작 시 정해진다. */
+    val personality: CharacterPersonality? = null,
+
+    /**
+     * 이 세션에서 실제로 사용한 첫 질문 문구.
+     * 캐릭터 이름이 들어가 회원마다 달라지므로, 중복 방지 목록과 대화 전문에 그대로 쓴다.
+     */
+    val firstQuestionText: String? = null
 )

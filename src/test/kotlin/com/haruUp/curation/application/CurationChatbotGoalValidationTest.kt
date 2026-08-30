@@ -1,6 +1,9 @@
 package com.haruUp.curation.application
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.haruUp.character.application.CharacterUseCase
+import com.haruUp.character.application.CurationCharacterProfile
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
@@ -46,6 +49,7 @@ class CurationChatbotGoalValidationTest {
     @Mock lateinit var openAiApiClient: OpenAiApiClient
     @Mock lateinit var memberGoalRepository: MemberGoalRepository
     @Mock lateinit var goalBasedMissionGenerationService: GoalBasedMissionGenerationService
+    @Mock lateinit var characterUseCase: CharacterUseCase
 
     // 운영에서는 Spring이 등록한 Kotlin 모듈 포함 ObjectMapper를 사용하므로 동일하게 맞춘다.
     private val objectMapper = jacksonObjectMapper()
@@ -61,9 +65,13 @@ class CurationChatbotGoalValidationTest {
             openAiApiClient = openAiApiClient,
             memberGoalRepository = memberGoalRepository,
             goalBasedMissionGenerationService = goalBasedMissionGenerationService,
+            characterUseCase = characterUseCase,
             objectMapper = objectMapper
         )
         whenever(redisTemplate.opsForValue()).thenReturn(valueOperations)
+        whenever(characterUseCase.getCurationProfile(any())).thenReturn(
+            CurationCharacterProfile(CharacterUseCase.DEFAULT_CHARACTER_NAME, CharacterPersonality.DEFAULT)
+        )
 
         val session = ChatbotSession(memberId = 1L, questionCount = 1, history = emptyList(), firstAnswer = "")
         whenever(valueOperations.get(sessionKey)).thenReturn(objectMapper.writeValueAsString(session))
