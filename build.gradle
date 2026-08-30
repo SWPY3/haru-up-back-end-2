@@ -45,6 +45,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation' // ✅ @Valid, @Email 등 사용 시
     implementation 'org.springframework.boot:spring-boot-starter-aop' // AOP for rate limiting
 
+    // DB 마이그레이션 (schema 변경 이력 관리)
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
     // JWT
     implementation "io.jsonwebtoken:jjwt-api:0.11.5"
     runtimeOnly "io.jsonwebtoken:jjwt-impl:0.11.5"
@@ -134,7 +138,46 @@ springBoot {
 tasks.named('test') {
     // 실제 OpenAI API를 호출하는 큐레이션 평가는 일반 테스트에서 제외한다. (curationEval 태스크로 실행)
     useJUnitPlatform {
-        excludeTags 'curation-eval'
+        excludeTags 'curation-eval', 'schema-gen', 'flyway-verify'
+    }
+}
+
+// Flyway 마이그레이션을 실제 로컬 PostgreSQL 에 적용해 검증
+//   docker compose up -d postgres  &&  ./gradlew flywayVerify
+tasks.register('flywayVerify', Test) {
+    group = 'verification'
+    description = 'Flyway 마이그레이션을 실행 중인 로컬 DB에 적용해 검증한다'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'flyway-verify'
+    }
+
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+        events 'passed', 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+// 엔티티에서 PostgreSQL DDL 생성 (Flyway 초기 마이그레이션 작성용)
+//   ./gradlew generateSchemaDdl  →  build/generated-schema.sql
+tasks.register('generateSchemaDdl', Test) {
+    group = 'build'
+    description = 'JPA 엔티티에서 PostgreSQL DDL을 생성한다'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'schema-gen'
+    }
+
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
     }
 }
 
