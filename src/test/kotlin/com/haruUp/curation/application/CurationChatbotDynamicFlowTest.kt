@@ -1,6 +1,9 @@
 package com.haruUp.curation.application
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.haruUp.character.application.CharacterUseCase
+import com.haruUp.character.application.CurationCharacterProfile
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
@@ -52,6 +55,7 @@ class CurationChatbotDynamicFlowTest {
     @Mock lateinit var openAiApiClient: OpenAiApiClient
     @Mock lateinit var memberGoalRepository: MemberGoalRepository
     @Mock lateinit var goalBasedMissionGenerationService: GoalBasedMissionGenerationService
+    @Mock lateinit var characterUseCase: CharacterUseCase
 
     private val objectMapper = jacksonObjectMapper()
     private lateinit var useCase: CurationChatbotUseCase
@@ -66,9 +70,13 @@ class CurationChatbotDynamicFlowTest {
             openAiApiClient = openAiApiClient,
             memberGoalRepository = memberGoalRepository,
             goalBasedMissionGenerationService = goalBasedMissionGenerationService,
+            characterUseCase = characterUseCase,
             objectMapper = objectMapper
         )
         whenever(redisTemplate.opsForValue()).thenReturn(valueOperations)
+        whenever(characterUseCase.getCurationProfile(any())).thenReturn(
+            CurationCharacterProfile(CharacterUseCase.DEFAULT_CHARACTER_NAME, CharacterPersonality.DEFAULT)
+        )
         whenever(goalBasedMissionGenerationService.generateAndSaveMissions(any(), any(), any(), anyOrNull(), any()))
             .thenReturn(emptyList())
         // save()는 non-null을 반환해 whenever(...) 형태로 스텁하면 스텁 시점에 NPE가 난다.

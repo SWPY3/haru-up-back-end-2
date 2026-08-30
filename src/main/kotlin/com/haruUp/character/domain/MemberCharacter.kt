@@ -3,6 +3,8 @@ package com.haruUp.character.domain
 import com.haruUp.character.domain.dto.MemberCharacterDto
 import com.haruUp.global.common.BaseEntity
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -31,7 +33,15 @@ class MemberCharacter (
 
     var lastMissionDate: LocalDate? = null,
 
+    // 큐레이션 꼬리질문의 말투에만 반영되는 AI 성격. 아직 고르지 않았으면 null이다.
+    @Enumerated(EnumType.STRING)
+    var personality: CharacterPersonality? = null,
+
 ) : BaseEntity() {
+
+    fun changePersonality(personality: CharacterPersonality) {
+        this.personality = personality
+    }
 
     fun toDto() : MemberCharacterDto = MemberCharacterDto(
        id = this.id,
@@ -45,7 +55,7 @@ class MemberCharacter (
         totalMissions = this.totalMissions,
         currentStreakDays = this.currentStreakDays,
         longestStreakDays = this.longestStreakDays,
-        lastMissionDate = this.lastMissionDate
-
+        lastMissionDate = this.lastMissionDate,
+        personality = this.personality
     )
 }

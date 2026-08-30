@@ -1,5 +1,6 @@
 package com.haruUp.character.domain.dto
 
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.character.domain.MemberCharacter
 import java.time.LocalDate
 
@@ -23,6 +24,9 @@ class MemberCharacterDto(
     var longestStreakDays: Int = 0,
 
     var lastMissionDate: LocalDate? = null,
+
+    /** 큐레이션 꼬리질문 말투에 반영되는 AI 성격 */
+    var personality: CharacterPersonality? = null,
 
 ) {
     fun toEntity(): MemberCharacter = MemberCharacter(

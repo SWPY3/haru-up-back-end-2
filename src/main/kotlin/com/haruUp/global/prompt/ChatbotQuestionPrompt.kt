@@ -1,5 +1,7 @@
 package com.haruUp.global.prompt
 
+import com.haruUp.character.domain.CharacterPersonality
+
 object ChatbotQuestionPrompt {
 
     /**
@@ -123,9 +125,16 @@ object ChatbotQuestionPrompt {
         goalText: String,
         history: List<String>,
         previousQuestions: List<String> = emptyList(),
-        canFinish: Boolean = false
+        canFinish: Boolean = false,
+        personality: CharacterPersonality? = null
     ): String {
         val sb = StringBuilder()
+
+        // 성격은 질문의 말투에만 반영한다. 무엇을 물을지는 성격과 무관하게 동일하다.
+        personality?.let {
+            sb.append(it.questionToneGuide)
+            sb.append("\n말투만 이 성격을 따르고, 묻는 내용과 아래의 모든 규칙은 그대로 지키세요.\n\n")
+        }
         sb.append("사용자 목표: $goalText\n\n")
 
         if (history.isNotEmpty()) {
