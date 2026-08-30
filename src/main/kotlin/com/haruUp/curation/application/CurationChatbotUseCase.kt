@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
+import com.haruUp.curation.dto.ChatbotGoalRejectedResponse
 import com.haruUp.curation.dto.ChatbotMissionDto
 import com.haruUp.curation.dto.ChatbotStartResponse
 import com.haruUp.global.openai.ChatMessage
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.prompt.ChatbotQuestionPrompt
 import com.haruUp.global.prompt.ChatbotSummaryPrompt
+import com.haruUp.global.prompt.GoalValidationPrompt
 import com.haruUp.goal.domain.MemberGoal
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.mission.application.GoalBasedMissionGenerationService
@@ -89,12 +91,28 @@ class CurationChatbotUseCase(
 
         val session = objectMapper.readValue(sessionJson, ChatbotSession::class.java)
 
-        // 첫 번째 답변이면 firstAnswer 저장
-        val updatedFirstAnswer = if (session.questionCount == 1) {
-            request.answer
-        } else {
-            session.firstAnswer
+        val isGoalAnswer = session.questionCount == 1
+
+        // 첫 번째 답변은 목표다. 꼬리질문을 만들기 전에 목표가 하나인지 먼저 검증한다.
+        val goalAnalysis = if (isGoalAnswer) analyzeGoal(session.memberId, request.answer) else null
+        if (goalAnalysis != null && !goalAnalysis.isSingleGoal) {
+            logger.info(
+                "목표 검증 실패 - memberId: ${session.memberId}, " +
+                "입력: \"${request.answer}\", 감지된 목표 ${goalAnalysis.goalCount}개: ${goalAnalysis.goals}"
+            )
+            // 세션은 그대로 둔다. 같은 sessionId로 목표를 다시 제출하면 이 검증부터 다시 시작한다.
+            return ChatbotGoalRejectedResponse(
+                sessionId = request.sessionId,
+                message = GoalValidator.MULTIPLE_GOAL_MESSAGE,
+                detectedGoals = goalAnalysis.goals
+            )
         }
+
+        // 첫 번째 답변이면 firstAnswer 저장
+        val updatedFirstAnswer = if (isGoalAnswer) request.answer else session.firstAnswer
+
+        // 시간 투자 필요 여부는 목표를 받은 시점에만 판정하고, 이후 단계에서 재사용한다.
+        val requiresTimeInvestment = goalAnalysis?.requiresTime ?: session.requiresTimeInvestment
 
         // history에 현재 답변 추가
         val updatedHistory = session.history.toMutableList().also { it.add(request.answer) }
@@ -114,7 +132,8 @@ class CurationChatbotUseCase(
             val updatedSession = session.copy(
                 questionCount = nextQuestionCount,
                 history = questionHistory,
-                firstAnswer = updatedFirstAnswer
+                firstAnswer = updatedFirstAnswer,
+                requiresTimeInvestment = requiresTimeInvestment
             )
             redisTemplate.opsForValue().set(
                 sessionKey,
@@ -271,6 +290,34 @@ class CurationChatbotUseCase(
     }
 
     /**
+     * OpenAI로 사용자가 입력한 목표를 분석합니다.
+     *
+     * 목표가 하나인지, 하루 중 일정 시간을 떼어 써야 하는 유형인지 판정합니다.
+     * 호출이 실패하면 사용자를 막지 않도록 통과 처리합니다.
+     * (잘못된 차단은 이탈로 이어지지만, 잘못된 통과는 질문이 한 번 더 나가는 정도의 비용입니다.)
+     */
+    private fun analyzeGoal(memberId: Long, goalText: String): GoalValidator.GoalAnalysis {
+        val raw = try {
+            openAiApiClient.generateText(
+                userMessage = GoalValidationPrompt.buildUserMessage(goalText),
+                systemMessage = GoalValidationPrompt.SYSTEM_PROMPT,
+                model = OpenAiApiClient.MODEL_DEFAULT,
+                temperature = 0.0
+            ).trim()
+        } catch (e: Exception) {
+            logger.warn("목표 분석 호출 실패 - memberId: $memberId, 목표: \"$goalText\", 오류: ${e.message}")
+            return GoalValidator.parse("")
+        }
+
+        return GoalValidator.parse(raw).also {
+            logger.info(
+                "목표 분석 완료 - memberId: $memberId, 목표: \"$goalText\", " +
+                "목표 수: ${it.goalCount}, 시간 투자 필요: ${it.requiresTime}"
+            )
+        }
+    }
+
+    /**
      * OpenAI를 사용하여 전체 대화를 요약합니다.
      */
     private fun generateConversationSummary(goalText: String, history: List<String>): String {
@@ -297,5 +344,12 @@ data class ChatbotSession(
     val memberId: Long,
     val questionCount: Int,
     val history: List<String>,
-    val firstAnswer: String
+    val firstAnswer: String,
+
+    /**
+     * 목표가 하루 중 일정 시간을 떼어 써야 이룰 수 있는 유형인지.
+     * 목표 입력 검증([GoalValidator])에서 판정하며, 투자 가능 시간을 따로 묻는 단계에서 사용한다.
+     * 아직 목표를 입력받지 않은 세션에서는 null이다.
+     */
+    val requiresTimeInvestment: Boolean? = null
 )

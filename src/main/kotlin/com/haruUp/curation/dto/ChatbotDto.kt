@@ -47,6 +47,29 @@ data class ChatbotAnswerResponse(
     val isLast: Boolean
 )
 
+@Schema(
+    description = """
+        목표 입력 검증 실패 응답 (첫 번째 답변에서 목표를 2개 이상 입력한 경우)
+        세션은 그대로 유지되며 질문 번호도 1에 머문다. 같은 sessionId로 목표를 다시 제출하면 된다.
+    """
+)
+data class ChatbotGoalRejectedResponse(
+    @Schema(description = "세션 ID")
+    val sessionId: String,
+
+    @Schema(description = "목표 검증 통과 여부 (항상 false)", example = "false")
+    val isValidGoal: Boolean = false,
+
+    @Schema(description = "사용자에게 보여줄 안내 문구 (입력란 아래 강조 텍스트)", example = "목표를 하나만 입력해주세요!")
+    val message: String,
+
+    @Schema(description = "AI가 찾아낸 목표 목록", example = "[\"다이어트\", \"토익 900점\"]")
+    val detectedGoals: List<String>,
+
+    @Schema(description = "현재 질문 번호 (재입력이므로 1 유지)", example = "1")
+    val questionNumber: Int = 1
+)
+
 @Schema(description = "챗봇 완료 응답 (6번째 질문 답변 후) - 미션 목록 포함")
 data class ChatbotCompleteResponse(
     @Schema(description = "완료 여부", example = "true")
