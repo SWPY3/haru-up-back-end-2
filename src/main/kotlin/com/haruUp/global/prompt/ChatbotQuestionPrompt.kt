@@ -89,6 +89,13 @@ object ChatbotQuestionPrompt {
 - 동기(이유·왜)를 두 번 묻기
 - 같은 대상의 같은 수치를 두 번 묻기 (예: "목표 감량 폭 몇 kg" 뒤에 "목표 체중 몇 kg")
 
+【정보가 충분한지 먼저 판단】
+질문을 만들기 전에, 지금까지 모은 정보만으로 이 사용자에게 맞는 미션을 설계할 수 있는지 판단하세요.
+충분하다면 질문을 억지로 더 만들지 말고 충분하다고 알리세요. 불필요한 질문은 사용자를 지치게 합니다.
+- 목표가 구체적이고, 동기와 현재 수준을 알고 있다면 충분합니다.
+- 아직 미션 난이도를 정할 수 없거나 목표가 모호하면 충분하지 않습니다.
+- [질문 가능 여부]에서 "충분 판정 금지"라고 알려주면, 충분하더라도 질문을 만들어야 합니다.
+
 【출력 규칙】
 1. 질문은 1문장, 공백 포함 45자 이내
 2. 예시 답변은 정확히 3개, 각각 공백 포함 15자 이내
@@ -98,7 +105,11 @@ object ChatbotQuestionPrompt {
 6. 아래 JSON 한 줄만 출력 — 마크다운, 코드블록(```), 번호/레이블, 설명 절대 금지
 
 【출력 형식】
+정보가 더 필요하면:
 {"question":"질문 1문장","examples":["예시답변1","예시답변2","예시답변3"]}
+
+정보가 충분하면:
+{"sufficient":true}
 """
 
     /**
@@ -111,7 +122,8 @@ object ChatbotQuestionPrompt {
     fun buildUserMessage(
         goalText: String,
         history: List<String>,
-        previousQuestions: List<String> = emptyList()
+        previousQuestions: List<String> = emptyList(),
+        canFinish: Boolean = false
     ): String {
         val sb = StringBuilder()
         sb.append("사용자 목표: $goalText\n\n")
@@ -133,6 +145,13 @@ object ChatbotQuestionPrompt {
                 sb.append("Q${index + 1}: $q\n")
             }
             sb.append("\n")
+        }
+
+        sb.append("[질문 가능 여부]\n")
+        if (canFinish) {
+            sb.append("정보가 충분하면 {\"sufficient\":true} 를 출력해도 됩니다.\n\n")
+        } else {
+            sb.append("충분 판정 금지 - 아직 질문이 더 필요한 단계이므로 반드시 질문을 만드세요.\n\n")
         }
 
         sb.append("위 대화에서 아직 파악하지 못한 정보(진짜 동기 / 현재 상태 / 세부 목표 구체화) 하나를 골라, 맞춤 미션 추천에 가장 필요한 정보 한 가지만 묻는 질문 1개와 예시 답변 3개를 생성하세요.\n")

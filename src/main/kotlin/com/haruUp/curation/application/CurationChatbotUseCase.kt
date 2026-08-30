@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
+import com.haruUp.curation.dto.ChatbotFinishConfirmResponse
 import com.haruUp.curation.dto.ChatbotGoalRejectedResponse
 import com.haruUp.curation.dto.ChatbotMissionDto
 import com.haruUp.curation.dto.ChatbotQuestionType
@@ -36,7 +37,25 @@ class CurationChatbotUseCase(
     companion object {
         private const val SESSION_KEY_PREFIX = "chatbot:session:"
         private const val SESSION_TTL_MINUTES = 30L
-        private const val TOTAL_QUESTIONS = 6
+
+        /**
+         * 꼬리질문 개수는 대화 상황에 따라 달라진다. (목표 입력은 포함하지 않는다)
+         *
+         * - 최소 [MIN_FOLLOW_UP_QUESTIONS]개는 무조건 묻는다. 그 전에는 AI가 충분하다고 해도 마무리하지 않는다.
+         * - 그 이후에는 AI가 "미션을 만들 만큼 정보가 모였다"고 판단하면 사용자에게 마무리할지 확인한다.
+         * - 사용자가 계속을 선택해도 [MAX_FOLLOW_UP_QUESTIONS]개에서 강제로 마무리한다.
+         */
+        const val MIN_FOLLOW_UP_QUESTIONS = 3
+        const val MAX_FOLLOW_UP_QUESTIONS = 8
+
+        const val FINISH_CONFIRM_QUESTION = "이대로 마무리할까요?"
+        const val FINISH_CONFIRM_YES = "네, 미션 만들어주세요"
+        const val FINISH_CONFIRM_NO = "아니요, 더 이야기할게요"
+        private val FINISH_CONFIRM_EXAMPLES = listOf(FINISH_CONFIRM_YES, FINISH_CONFIRM_NO)
+
+        /** 부정을 먼저 걸러내야 "아니요, 미션 만들어주세요" 같은 답을 긍정으로 잘못 읽지 않는다. */
+        private val NEGATIVE_ANSWER_REGEX = Regex("아니|아뇨|싫|더 (이야기|얘기|대화|물어)|계속|안 ?할래|나중")
+        private val AFFIRMATIVE_ANSWER_REGEX = Regex("네|예|응|좋|만들|마무리|끝|그만|충분|시작")
 
         /** 질문이 검증(한 정보 / 짧은 답변 / 문법)을 통과하지 못했을 때 재생성하는 최대 횟수 */
         const val MAX_QUESTION_RETRY = 3
@@ -57,14 +76,13 @@ class CurationChatbotUseCase(
         const val FIRST_QUESTION_PLACEHOLDER = "예시) 근육 향상 및 체력 증진 / 월 주식 투자 수익 30만원 / 금연하기"
 
         /**
-         * 투자 가능 시간 질문 번호.
+         * 투자 가능 시간 질문.
          *
-         * 시간 투자가 필요한 목표일 때만 꼬리질문 뒤에 한 번 더 붙는 고정 질문이다.
+         * 시간 투자가 필요한 목표일 때만 꼬리질문이 모두 끝난 뒤 한 번 더 붙는 고정 질문이다.
+         * 꼬리질문 개수가 가변이라 질문 번호도 고정이 아니다.
          * AI가 만드는 질문이 아니므로 [ChatbotQuestionPrompt] 에서는 시간 질문을 전면 금지하고,
          * 여기서만 정해진 선택지로 묻는다.
          */
-        const val TIME_QUESTION_NUMBER = TOTAL_QUESTIONS + 1
-
         const val TIME_QUESTION = "목표를 위해 하루에 쓸 수 있는 시간이 얼마인가요?"
         private val TIME_QUESTION_EXAMPLES = listOf(
             "10분 이내",
@@ -106,6 +124,10 @@ class CurationChatbotUseCase(
 
     /**
      * 사용자의 답변을 받아 다음 질문 또는 완료 응답을 반환합니다.
+     *
+     * 꼬리질문 개수는 고정이 아니다. 최소 [MIN_FOLLOW_UP_QUESTIONS]개를 채운 뒤부터는
+     * AI가 정보가 충분한지 판단하고, 충분하면 사용자에게 마무리할지 확인한다.
+     * 사용자가 계속을 선택해도 [MAX_FOLLOW_UP_QUESTIONS]개에서 강제로 마무리한다.
      */
     @Transactional
     fun answer(request: ChatbotAnswerRequest): Any {
@@ -114,6 +136,17 @@ class CurationChatbotUseCase(
             ?: throw IllegalArgumentException("세션을 찾을 수 없습니다. 챗봇을 다시 시작해주세요.")
 
         val session = objectMapper.readValue(sessionJson, ChatbotSession::class.java)
+
+        // 마무리 확인에 대한 답변은 꼬리질문 답변이 아니라 예/아니오 선택이다.
+        if (session.awaitingFinishConfirmation) {
+            return handleFinishConfirmation(sessionKey, session, request)
+        }
+
+        // 투자 가능 시간 답변이 마지막 단계다.
+        if (session.awaitingTimeAnswer) {
+            val history = session.history.toMutableList().also { it.add(request.answer) }
+            return completeCuration(sessionKey, session, request.sessionId, history, session.pendingSummary)
+        }
 
         val isGoalAnswer = session.questionCount == 1
 
@@ -132,145 +165,268 @@ class CurationChatbotUseCase(
             )
         }
 
-        // 첫 번째 답변이면 firstAnswer 저장
         val updatedFirstAnswer = if (isGoalAnswer) request.answer else session.firstAnswer
-
         // 시간 투자 필요 여부는 목표를 받은 시점에만 판정하고, 이후 단계에서 재사용한다.
         val requiresTimeInvestment = goalAnalysis?.requiresTime ?: session.requiresTimeInvestment
-
-        // history에 현재 답변 추가
         val updatedHistory = session.history.toMutableList().also { it.add(request.answer) }
 
-        return if (session.questionCount < TOTAL_QUESTIONS) {
-            // 꼬리질문 생성 (질문 + 예시 답변 3개)
-            val next = generateFollowUpQuestion(
-                goalText = updatedFirstAnswer,
-                history = updatedHistory
-            )
-            val nextQuestion = next.question
-            val nextQuestionCount = session.questionCount + 1
-            // 시간 투자가 필요한 목표면 꼬리질문 뒤에 고정 시간 질문이 한 번 더 붙는다.
-            val isLast = nextQuestionCount == TOTAL_QUESTIONS && requiresTimeInvestment != true
+        val base = session.copy(
+            firstAnswer = updatedFirstAnswer,
+            requiresTimeInvestment = requiresTimeInvestment
+        )
 
-            // 세션 업데이트 (history에 방금 생성된 질문도 추가)
-            val questionHistory = updatedHistory.toMutableList().also { it.add(nextQuestion) }
-            val updatedSession = session.copy(
-                questionCount = nextQuestionCount,
-                history = questionHistory,
-                firstAnswer = updatedFirstAnswer,
-                requiresTimeInvestment = requiresTimeInvestment
-            )
-            redisTemplate.opsForValue().set(
-                sessionKey,
-                objectMapper.writeValueAsString(updatedSession),
-                Duration.ofMinutes(SESSION_TTL_MINUTES)
-            )
+        // 방금 받은 답변까지 반영한 꼬리질문 답변 수 (목표 답변은 세지 않는다)
+        val answeredFollowUps = session.questionCount - 1
 
-            ChatbotAnswerResponse(
-                sessionId = request.sessionId,
-                question = nextQuestion,
-                examples = next.examples,
-                questionNumber = nextQuestionCount,
-                isLast = isLast
-            )
-        } else if (session.questionCount == TOTAL_QUESTIONS && requiresTimeInvestment == true) {
-            // 마지막 꼬리질문까지 답변 완료 → 투자 가능 시간을 고정 선택지로 한 번 더 묻는다.
-            val questionHistory = updatedHistory.toMutableList().also { it.add(TIME_QUESTION) }
-            val updatedSession = session.copy(
-                questionCount = TIME_QUESTION_NUMBER,
-                history = questionHistory,
-                firstAnswer = updatedFirstAnswer,
-                requiresTimeInvestment = true
-            )
-            redisTemplate.opsForValue().set(
-                sessionKey,
-                objectMapper.writeValueAsString(updatedSession),
-                Duration.ofMinutes(SESSION_TTL_MINUTES)
-            )
-
-            logger.info("투자 가능 시간 질문 반환 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer")
-
-            ChatbotAnswerResponse(
-                sessionId = request.sessionId,
-                question = TIME_QUESTION,
-                examples = TIME_QUESTION_EXAMPLES,
-                questionNumber = TIME_QUESTION_NUMBER,
-                isLast = true,
-                questionType = ChatbotQuestionType.FIXED_TIME
-            )
-        } else {
-            // 6번째 질문 답변 완료 → 대화 종료 처리
-            val allHistory = updatedHistory
-
-            // 대화 요약 생성 (미션 생성용 상세 요약 + 사용자 노출용 짧은 요약)
-            val summaries = generateConversationSummary(
-                goalText = updatedFirstAnswer,
-                history = allHistory
-            )
+        if (answeredFollowUps >= MAX_FOLLOW_UP_QUESTIONS) {
             logger.info(
-                "챗봇 대화 요약 생성 완료 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer, " +
-                "상세 요약: ${summaries.detailed}, 사용자 요약: ${summaries.brief}"
+                "꼬리질문 상한 도달 - memberId: ${session.memberId}, " +
+                "${MAX_FOLLOW_UP_QUESTIONS}개 답변 완료로 대화를 마무리합니다."
             )
+            return finishOrAskTime(sessionKey, base, request.sessionId, updatedHistory, pendingSummary = null)
+        }
 
-            // 기존 활성 목표 비활성화
-            memberGoalRepository.findByMemberIdAndIsActiveTrue(session.memberId)?.let { existingGoal ->
-                existingGoal.deactivate()
-                memberGoalRepository.save(existingGoal)
-            }
+        return askNextQuestionOrConfirm(
+            sessionKey = sessionKey,
+            session = base,
+            sessionId = request.sessionId,
+            history = updatedHistory,
+            answeredFollowUps = answeredFollowUps,
+            forceQuestion = false
+        )
+    }
 
-            // 원본 대화 JSON으로 변환
-            val conversationRaw = buildConversationRaw(allHistory)
+    /**
+     * 마무리 확인에 대한 사용자의 선택을 처리합니다.
+     *
+     * 마무리를 고르면 확인 화면에 보여준 요약을 그대로 재사용해 대화를 끝내고,
+     * 계속을 고르면 AI가 충분하다고 판단했더라도 질문을 하나 더 만듭니다.
+     */
+    private fun handleFinishConfirmation(
+        sessionKey: String,
+        session: ChatbotSession,
+        request: ChatbotAnswerRequest
+    ): Any {
+        val wantsToFinish = isAffirmative(request.answer)
+        val cleared = session.copy(awaitingFinishConfirmation = false)
 
-            // 새 MemberGoal 저장
-            val memberGoal = MemberGoal(
-                memberId = session.memberId,
-                goalText = updatedFirstAnswer,
-                conversationSummary = summaries.detailed,
-                userSummary = summaries.brief,
-                conversationRaw = conversationRaw,
-                isActive = true
-            )
-            memberGoalRepository.save(memberGoal)
-
-            // 즉시 오늘의 미션 생성 (새 목표 시작일 = 오늘)
-            val savedMissions = goalBasedMissionGenerationService.generateAndSaveMissions(
-                memberId = session.memberId,
-                goalText = updatedFirstAnswer,
-                conversationRaw = conversationRaw,
-                goalStartDate = java.time.LocalDate.now()
-            )
-
-            // Redis 세션 삭제
-            redisTemplate.delete(sessionKey)
-
-            logger.info("챗봇 대화 완료 및 미션 생성 - memberId: ${session.memberId}, sessionId: ${request.sessionId}")
-
-            ChatbotCompleteResponse(
-                isCompleted = true,
-                goalText = updatedFirstAnswer,
-                summary = summaries.brief,
-                missions = savedMissions.map { entity ->
-                    ChatbotMissionDto(
-                        id = entity.id!!,
-                        missionContent = entity.missionContent,
-                        missionDescription = entity.missionDescription,
-                        difficulty = entity.difficulty ?: 1,
-                        expEarned = entity.expEarned
-                    )
-                }
+        if (wantsToFinish) {
+            logger.info("사용자가 마무리를 선택 - memberId: ${session.memberId}")
+            return finishOrAskTime(
+                sessionKey, cleared, request.sessionId, session.history, session.pendingSummary
             )
         }
+
+        logger.info("사용자가 대화 계속을 선택 - memberId: ${session.memberId}")
+        return askNextQuestionOrConfirm(
+            sessionKey = sessionKey,
+            // 확인 화면에서 보여준 요약은 대화가 이어지면 더 이상 유효하지 않다.
+            session = cleared.copy(pendingSummary = null),
+            sessionId = request.sessionId,
+            history = session.history,
+            answeredFollowUps = session.questionCount - 1,
+            // 사용자가 계속을 원했으므로 이번에는 반드시 질문을 만든다.
+            forceQuestion = true
+        )
+    }
+
+    /**
+     * 다음 꼬리질문을 만들거나, AI가 충분하다고 판단하면 마무리 확인 화면을 반환합니다.
+     *
+     * @param answeredFollowUps 지금까지 받은 꼬리질문 답변 수
+     * @param forceQuestion true면 AI가 충분하다고 해도 질문을 만든다
+     */
+    private fun askNextQuestionOrConfirm(
+        sessionKey: String,
+        session: ChatbotSession,
+        sessionId: String,
+        history: List<String>,
+        answeredFollowUps: Int,
+        forceQuestion: Boolean
+    ): Any {
+        // 최소 개수를 채우기 전에는 충분 판정을 허용하지 않는다.
+        val canFinish = !forceQuestion && answeredFollowUps >= MIN_FOLLOW_UP_QUESTIONS
+
+        val next = generateFollowUpQuestion(
+            goalText = session.firstAnswer,
+            history = history,
+            canFinish = canFinish
+        )
+
+        if (next.sufficient) {
+            val summaries = generateConversationSummary(session.firstAnswer, history)
+            logger.info(
+                "정보 충분 판정 - memberId: ${session.memberId}, " +
+                "꼬리질문 ${answeredFollowUps}개 후 마무리 확인을 요청합니다."
+            )
+
+            val updatedSession = session.copy(
+                history = history,
+                awaitingFinishConfirmation = true,
+                pendingSummary = summaries
+            )
+            saveSession(sessionKey, updatedSession)
+
+            return ChatbotFinishConfirmResponse(
+                sessionId = sessionId,
+                summary = summaries.brief,
+                question = FINISH_CONFIRM_QUESTION,
+                examples = FINISH_CONFIRM_EXAMPLES,
+                answeredCount = answeredFollowUps
+            )
+        }
+
+        val nextQuestionCount = session.questionCount + 1
+        val questionHistory = history.toMutableList().also { it.add(next.question) }
+        val updatedSession = session.copy(
+            questionCount = nextQuestionCount,
+            history = questionHistory
+        )
+        saveSession(sessionKey, updatedSession)
+
+        return ChatbotAnswerResponse(
+            sessionId = sessionId,
+            question = next.question,
+            examples = next.examples,
+            questionNumber = nextQuestionCount,
+            // 상한에 도달했고 시간 질문도 없다면 이번이 마지막 질문이다.
+            isLast = nextQuestionCount - 1 >= MAX_FOLLOW_UP_QUESTIONS &&
+                session.requiresTimeInvestment != true
+        )
+    }
+
+    /**
+     * 시간 투자가 필요한 목표면 투자 가능 시간을 한 번 더 묻고, 아니면 바로 대화를 마무리합니다.
+     */
+    private fun finishOrAskTime(
+        sessionKey: String,
+        session: ChatbotSession,
+        sessionId: String,
+        history: List<String>,
+        pendingSummary: ConversationSummaryParser.ConversationSummaries?
+    ): Any {
+        if (session.requiresTimeInvestment != true) {
+            return completeCuration(sessionKey, session, sessionId, history, pendingSummary)
+        }
+
+        val questionHistory = history.toMutableList().also { it.add(TIME_QUESTION) }
+        val updatedSession = session.copy(
+            history = questionHistory,
+            awaitingTimeAnswer = true,
+            // 시간 답변이 더해지면 요약이 달라지므로 확인 화면에서 만든 요약은 버린다.
+            pendingSummary = null
+        )
+        saveSession(sessionKey, updatedSession)
+
+        logger.info("투자 가능 시간 질문 반환 - memberId: ${session.memberId}, 목표: ${session.firstAnswer}")
+
+        return ChatbotAnswerResponse(
+            sessionId = sessionId,
+            question = TIME_QUESTION,
+            examples = TIME_QUESTION_EXAMPLES,
+            questionNumber = session.questionCount + 1,
+            isLast = true,
+            questionType = ChatbotQuestionType.FIXED_TIME
+        )
+    }
+
+    /**
+     * 목표를 저장하고 오늘의 미션을 생성해 대화를 종료합니다.
+     *
+     * @param pendingSummary 마무리 확인 화면에서 이미 만든 요약. 있으면 재생성하지 않는다.
+     */
+    private fun completeCuration(
+        sessionKey: String,
+        session: ChatbotSession,
+        sessionId: String,
+        history: List<String>,
+        pendingSummary: ConversationSummaryParser.ConversationSummaries?
+    ): ChatbotCompleteResponse {
+        val summaries = pendingSummary ?: generateConversationSummary(session.firstAnswer, history)
+        logger.info(
+            "챗봇 대화 요약 생성 완료 - memberId: ${session.memberId}, 목표: ${session.firstAnswer}, " +
+            "상세 요약: ${summaries.detailed}, 사용자 요약: ${summaries.brief}"
+        )
+
+        // 기존 활성 목표 비활성화
+        memberGoalRepository.findByMemberIdAndIsActiveTrue(session.memberId)?.let { existingGoal ->
+            existingGoal.deactivate()
+            memberGoalRepository.save(existingGoal)
+        }
+
+        val conversationRaw = buildConversationRaw(history)
+
+        val memberGoal = MemberGoal(
+            memberId = session.memberId,
+            goalText = session.firstAnswer,
+            conversationSummary = summaries.detailed,
+            userSummary = summaries.brief,
+            conversationRaw = conversationRaw,
+            isActive = true
+        )
+        memberGoalRepository.save(memberGoal)
+
+        // 즉시 오늘의 미션 생성 (새 목표 시작일 = 오늘)
+        val savedMissions = goalBasedMissionGenerationService.generateAndSaveMissions(
+            memberId = session.memberId,
+            goalText = session.firstAnswer,
+            conversationRaw = conversationRaw,
+            goalStartDate = java.time.LocalDate.now()
+        )
+
+        redisTemplate.delete(sessionKey)
+
+        logger.info("챗봇 대화 완료 및 미션 생성 - memberId: ${session.memberId}, sessionId: $sessionId")
+
+        return ChatbotCompleteResponse(
+            isCompleted = true,
+            goalText = session.firstAnswer,
+            summary = summaries.brief,
+            missions = savedMissions.map { entity ->
+                ChatbotMissionDto(
+                    id = entity.id!!,
+                    missionContent = entity.missionContent,
+                    missionDescription = entity.missionDescription,
+                    difficulty = entity.difficulty ?: 1,
+                    expEarned = entity.expEarned
+                )
+            }
+        )
+    }
+
+    /**
+     * 마무리 확인 답변이 긍정인지 판단합니다.
+     *
+     * 프론트는 제시한 선택지를 그대로 보내지만, 사용자가 직접 입력할 수도 있어
+     * 부정 표현을 먼저 걸러낸 뒤 긍정 여부를 본다.
+     */
+    private fun isAffirmative(answer: String): Boolean {
+        val normalized = answer.trim()
+        if (NEGATIVE_ANSWER_REGEX.containsMatchIn(normalized)) return false
+        return AFFIRMATIVE_ANSWER_REGEX.containsMatchIn(normalized)
+    }
+
+    private fun saveSession(sessionKey: String, session: ChatbotSession) {
+        redisTemplate.opsForValue().set(
+            sessionKey,
+            objectMapper.writeValueAsString(session),
+            Duration.ofMinutes(SESSION_TTL_MINUTES)
+        )
     }
 
     /**
      * OpenAI를 사용하여 꼬리질문과 예시 답변 3개를 생성합니다.
      *
      * 생성 결과가 [ChatbotQuestionValidator] 검증(한 질문 = 한 정보 / 30자 이내 답변 가능 / 한국어 문법 /
-     * 예시 답변 3개)을 통과하지 못하면 탈락 사유를 프롬프트에 덧붙여 최대 [MAX_QUESTION_RETRY]회까지 재생성합니다.
+     * 예시 답변 3개 / 의미 중복)을 통과하지 못하면 탈락 사유를 프롬프트에 덧붙여
+     * 최대 [MAX_QUESTION_RETRY]회까지 재생성합니다.
+     *
+     * @param canFinish true면 모델이 질문 대신 "정보가 충분하다"고 응답할 수 있습니다.
      */
     private fun generateFollowUpQuestion(
         goalText: String,
-        history: List<String>
+        history: List<String>,
+        canFinish: Boolean
     ): ChatbotQuestionValidator.ParsedQuestion {
         // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
         // Q1(고정 첫 질문) + 이미 생성된 AI 질문들을 중복 방지 목록으로 전달
@@ -279,7 +435,8 @@ class CurationChatbotUseCase(
             history.filterIndexed { index, _ -> index % 2 == 1 }.forEach { add(it) }
         }
 
-        val baseUserMessage = ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions)
+        val baseUserMessage =
+            ChatbotQuestionPrompt.buildUserMessage(goalText, history, previousQuestions, canFinish)
 
         // 검증에 모두 실패했을 때 사용할 후보 (질문 1개로 잘라낸 형태)
         var fallback: ChatbotQuestionValidator.ParsedQuestion? = null
@@ -294,6 +451,9 @@ class CurationChatbotUseCase(
             ).trim()
 
             val parsed = ChatbotQuestionValidator.parse(raw)
+            if (parsed.sufficient) {
+                return parsed
+            }
             if (parsed.question.isBlank()) {
                 logger.warn("꼬리질문 생성 결과가 비어 있음 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) - 원문: \"$raw\"")
                 return@repeat
@@ -415,5 +575,20 @@ data class ChatbotSession(
      * 목표 입력 검증([GoalValidator])에서 판정하며, 투자 가능 시간을 따로 묻는 단계에서 사용한다.
      * 아직 목표를 입력받지 않은 세션에서는 null이다.
      */
-    val requiresTimeInvestment: Boolean? = null
+    val requiresTimeInvestment: Boolean? = null,
+
+    /**
+     * 마무리 확인 질문을 던져 놓고 사용자의 예/아니오를 기다리는 중인지.
+     * 이 상태에서 들어온 답변은 꼬리질문의 답변이 아니라 마무리 여부 선택으로 해석한다.
+     */
+    val awaitingFinishConfirmation: Boolean = false,
+
+    /** 투자 가능 시간 질문을 던져 놓고 답변을 기다리는 중인지 */
+    val awaitingTimeAnswer: Boolean = false,
+
+    /**
+     * 마무리 확인 화면에 보여준 요약.
+     * 사용자가 그대로 마무리를 선택하면 재생성하지 않고 이 값을 그대로 쓴다.
+     */
+    val pendingSummary: ConversationSummaryParser.ConversationSummaries? = null
 )

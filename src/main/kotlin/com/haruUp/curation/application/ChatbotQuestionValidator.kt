@@ -42,10 +42,16 @@ object ChatbotQuestionValidator {
         "어떤 점들", "어떤 것들", "무엇무엇", "어떻게 생각", "자세히", "구체적으로 적어"
     )
 
-    /** 파싱된 꼬리질문 */
+    /**
+     * 파싱된 꼬리질문
+     *
+     * @param sufficient 모델이 "정보가 충분하니 더 묻지 않아도 된다"고 판단한 경우 true.
+     *                   이때 question과 examples는 비어 있다.
+     */
     data class ParsedQuestion(
         val question: String,
-        val examples: List<String>
+        val examples: List<String>,
+        val sufficient: Boolean = false
     )
 
     /**
@@ -57,6 +63,9 @@ object ChatbotQuestionValidator {
 
         return try {
             val node = objectMapper.readTree(cleaned)
+            if (node.get("sufficient")?.asBoolean() == true) {
+                return ParsedQuestion(question = "", examples = emptyList(), sufficient = true)
+            }
             val question = node.get("question")?.asText()?.let { cleanQuestionText(it) }
             if (question.isNullOrBlank()) {
                 ParsedQuestion(cleanQuestionText(cleaned), emptyList())

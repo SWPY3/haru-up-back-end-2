@@ -46,6 +46,13 @@ class CurationPromptEvaluationTest {
 
     private val maxMissionRetry = 3
     private val maxQuestionRetry = CurationChatbotUseCase.MAX_QUESTION_RETRY
+    /**
+     * 평가에서 재현할 꼬리질문 수.
+     *
+     * 운영에서는 AI 판단과 사용자 선택으로 3~8개 사이에서 달라지지만,
+     * 평가는 프롬프트 품질을 비교하는 것이 목적이라 기준치인 5개(목표 1 + 꼬리질문 5)로 고정한다.
+     * 따라서 충분 판정은 허용하지 않는다(canFinish = false).
+     */
     private val totalQuestions = 6
 
     /** 사용자가 부담 없이 답할 수 있다고 본 답변 길이 기준 */
@@ -156,7 +163,8 @@ class CurationPromptEvaluationTest {
             val baseUserMessage = ChatbotQuestionPrompt.buildUserMessage(
                 goalText = persona.goalText,
                 history = history,
-                previousQuestions = previousQuestions
+                previousQuestions = previousQuestions,
+                canFinish = false
             )
 
             var retryHint = ""

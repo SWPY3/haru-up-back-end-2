@@ -38,13 +38,20 @@ class CurationChatbotController(
             - 1번 답변(목표): AI가 목표를 분석해 목표가 2개 이상이면 질문을 진행하지 않고 재입력 응답 반환
               (ChatbotGoalRejectedResponse) — isValidGoal=false, message를 입력란 아래에 강조 표시하고
               같은 sessionId로 목표를 다시 제출하면 됩니다. 목표가 1개면 아래 꼬리질문 응답으로 진행합니다.
-            - 1~5번 답변: 다음 꼬리질문 반환 (ChatbotAnswerResponse) — question과 함께 examples(예시 답변 3개) 포함, 사용자가 골라서 답할 수 있음
-              questionType=AI_FOLLOW_UP
-            - 6번 답변:
-              · 시간 투자가 필요한 목표면 투자 가능 시간을 묻는 고정 질문 반환
-                (ChatbotAnswerResponse, questionNumber=7, questionType=FIXED_TIME, isLast=true)
-                examples는 "10분 이내 / 30분 / 1시간 이상" 고정 선택지이며 직접 입력도 가능
-              · 시간 투자가 필요 없는 목표면 아래 완료 응답으로 바로 종료
+            - 꼬리질문 답변: 다음 꼬리질문 반환 (ChatbotAnswerResponse, questionType=AI_FOLLOW_UP)
+              question과 함께 examples(예시 답변 3개) 포함, 사용자가 골라서 답할 수 있음
+
+            꼬리질문 개수는 고정이 아닙니다. 최소 3개는 반드시 묻고, 그 뒤부터는 AI가
+            미션을 만들 만큼 정보가 모였는지 판단합니다. 최대 8개에서 강제로 마무리합니다.
+
+            - 정보가 충분하다고 판단되면: 마무리 확인 응답 반환 (ChatbotFinishConfirmResponse)
+              summary(사용자용 짧은 요약)를 보여주고 "이대로 마무리할까요?"를 묻습니다.
+              examples 중 하나를 다음 answer로 그대로 보내면 됩니다.
+              · "네, 미션 만들어주세요" → 마무리 진행
+              · "아니요, 더 이야기할게요" → 꼬리질문을 이어감
+            - 마무리로 진행할 때, 시간 투자가 필요한 목표면 투자 가능 시간을 묻는 고정 질문 반환
+              (ChatbotAnswerResponse, questionType=FIXED_TIME, isLast=true)
+              examples는 "10분 이내 / 30분 / 1시간 이상" 고정 선택지이며 직접 입력도 가능
             - 마지막 답변: 목표 저장 + 미션 생성 완료 응답 반환 (ChatbotCompleteResponse) — missions 필드에 15개 미션 포함
         """
     )
