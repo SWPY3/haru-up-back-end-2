@@ -7,11 +7,23 @@ data class ChatbotStartResponse(
     @Schema(description = "세션 ID (이후 요청에 사용)", example = "550e8400-e29b-41d4-a716-446655440000")
     val sessionId: String,
 
-    @Schema(description = "첫 번째 질문", example = "어떤 목표를 이루고 싶으신가요?")
+    @Schema(description = "첫 번째 질문", example = "이루고 싶은 목표 한 개를 직접 입력해주세요.")
     val question: String,
 
-    @Schema(description = "예시 답변 목록")
+    @Schema(
+        description = """
+            선택형 예시 답변 목록.
+            첫 질문에서는 사용자가 예시를 그대로 선택해 목표가 구체화되지 않는 문제가 있어 항상 비어 있다.
+            대신 placeholder로 예시를 보여준다.
+        """
+    )
     val examples: List<String>,
+
+    @Schema(
+        description = "입력란에 표시할 placeholder (고를 수 없는 예시)",
+        example = "예시) 근육 향상 및 체력 증진 / 월 주식 투자 수익 30만원 / 금연하기"
+    )
+    val placeholder: String,
 
     @Schema(description = "현재 질문 번호 (1부터 시작)", example = "1")
     val questionNumber: Int
@@ -95,6 +107,12 @@ data class ChatbotCompleteResponse(
 
     @Schema(description = "사용자의 목표 텍스트")
     val goalText: String,
+
+    @Schema(
+        description = "대화 내용을 사용자에게 보여주기 위한 짧은 요약 (1~2문장)",
+        example = "현재 68kg에서 5kg 감량이 목표이고, 하루 30분 정도 운동할 수 있어요."
+    )
+    val summary: String,
 
     @Schema(description = "생성된 미션 목록 (하5 + 중5 + 상5 = 15개)")
     val missions: List<ChatbotMissionDto>

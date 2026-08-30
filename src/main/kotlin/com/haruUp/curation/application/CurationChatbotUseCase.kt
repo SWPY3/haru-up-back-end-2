@@ -41,13 +41,20 @@ class CurationChatbotUseCase(
         /** 질문이 검증(한 정보 / 짧은 답변 / 문법)을 통과하지 못했을 때 재생성하는 최대 횟수 */
         const val MAX_QUESTION_RETRY = 3
 
-        const val FIRST_QUESTION = "어떤 목표를 이루고 싶으신가요?\n도전하고 싶은 목표를 선택하거나 직접 입력해주세요."
-        private val FIRST_QUESTION_EXAMPLES = listOf(
-            "🏋️‍♀️ 체중 감량 5kg",
-            "🚭 금연하기",
-            "📚 토익 900점",
-            "📈 주식 수익률 월 1%"
-        )
+        /** 챗봇이 사용자에게 자신을 가리킬 때 쓰는 캐릭터 이름 */
+        private const val CHARACTER_NAME = "하루"
+
+        const val FIRST_QUESTION =
+            "이루고 싶은 목표 한 개를 직접 입력해주세요.\n" +
+            "자세하게 작성할수록 ${CHARACTER_NAME}가 더 정확한 질문을 할 수 있어요."
+
+        /**
+         * 첫 질문 입력란의 placeholder.
+         *
+         * 선택형 예시를 제공하면 사용자가 예시를 그대로 골라 목표가 구체화되지 않는 문제가 있어,
+         * 고를 수 없는 placeholder 형태로만 예시를 보여준다.
+         */
+        const val FIRST_QUESTION_PLACEHOLDER = "예시) 근육 향상 및 체력 증진 / 월 주식 투자 수익 30만원 / 금연하기"
 
         /**
          * 투자 가능 시간 질문 번호.
@@ -91,7 +98,8 @@ class CurationChatbotUseCase(
         return ChatbotStartResponse(
             sessionId = sessionId,
             question = FIRST_QUESTION,
-            examples = FIRST_QUESTION_EXAMPLES,
+            examples = emptyList(),
+            placeholder = FIRST_QUESTION_PLACEHOLDER,
             questionNumber = 1
         )
     }
@@ -194,12 +202,15 @@ class CurationChatbotUseCase(
             // 6번째 질문 답변 완료 → 대화 종료 처리
             val allHistory = updatedHistory
 
-            // 대화 요약 생성
-            val conversationSummary = generateConversationSummary(
+            // 대화 요약 생성 (미션 생성용 상세 요약 + 사용자 노출용 짧은 요약)
+            val summaries = generateConversationSummary(
                 goalText = updatedFirstAnswer,
                 history = allHistory
             )
-            logger.info("챗봇 대화 요약 생성 완료 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer, 요약: $conversationSummary")
+            logger.info(
+                "챗봇 대화 요약 생성 완료 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer, " +
+                "상세 요약: ${summaries.detailed}, 사용자 요약: ${summaries.brief}"
+            )
 
             // 기존 활성 목표 비활성화
             memberGoalRepository.findByMemberIdAndIsActiveTrue(session.memberId)?.let { existingGoal ->
@@ -214,7 +225,8 @@ class CurationChatbotUseCase(
             val memberGoal = MemberGoal(
                 memberId = session.memberId,
                 goalText = updatedFirstAnswer,
-                conversationSummary = conversationSummary,
+                conversationSummary = summaries.detailed,
+                userSummary = summaries.brief,
                 conversationRaw = conversationRaw,
                 isActive = true
             )
@@ -236,6 +248,7 @@ class CurationChatbotUseCase(
             ChatbotCompleteResponse(
                 isCompleted = true,
                 goalText = updatedFirstAnswer,
+                summary = summaries.brief,
                 missions = savedMissions.map { entity ->
                     ChatbotMissionDto(
                         id = entity.id!!,
@@ -362,8 +375,15 @@ class CurationChatbotUseCase(
 
     /**
      * OpenAI를 사용하여 전체 대화를 요약합니다.
+     *
+     * 한 번의 호출로 용도가 다른 요약 2개를 받습니다.
+     * - detailed: 미션 생성 프롬프트에 넣는 상세 요약
+     * - brief: 사용자 화면에 그대로 보여주는 짧은 요약
      */
-    private fun generateConversationSummary(goalText: String, history: List<String>): String {
+    private fun generateConversationSummary(
+        goalText: String,
+        history: List<String>
+    ): ConversationSummaryParser.ConversationSummaries {
         val conversationText = ChatbotSummaryPrompt.buildConversationText(goalText, history)
 
         val messages = listOf(
@@ -371,12 +391,13 @@ class CurationChatbotUseCase(
             ChatMessage(role = "user", content = conversationText)
         )
 
-        return openAiApiClient.chatCompletion(
+        val raw = openAiApiClient.chatCompletion(
             messages = messages,
             model = OpenAiApiClient.MODEL_DEFAULT,
             temperature = 0.5
-        ).result?.message?.content?.trim()
-            ?: "목표 달성을 위한 대화를 완료했습니다."
+        ).result?.message?.content.orEmpty()
+
+        return ConversationSummaryParser.parse(raw)
     }
 }
 

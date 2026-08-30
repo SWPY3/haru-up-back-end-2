@@ -28,8 +28,13 @@ class MemberGoal(
     @Column(name = "goal_text", nullable = false, columnDefinition = "TEXT")
     val goalText: String,
 
+    // 미션 생성 프롬프트에 넣는 상세 요약 (사용자에게 노출하지 않음)
     @Column(name = "conversation_summary", nullable = false, columnDefinition = "TEXT")
     val conversationSummary: String,
+
+    // 사용자 화면에 그대로 보여주는 짧은 요약. 이 컬럼 추가 전에 만들어진 목표는 null이다.
+    @Column(name = "user_summary", columnDefinition = "TEXT")
+    val userSummary: String? = null,
 
     // 원본 Q&A 대화 전체 (JSON 형태로 저장, 미션 생성 시 활용)
     @Column(name = "conversation_raw", columnDefinition = "TEXT")

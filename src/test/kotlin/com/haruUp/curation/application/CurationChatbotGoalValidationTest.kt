@@ -216,9 +216,47 @@ class CurationChatbotGoalValidationTest {
         )
     }
 
-    private fun summaryResponse() = com.haruUp.global.openai.OpenAiApiResponse(
+    private fun summaryResponse(content: String = "요약") = com.haruUp.global.openai.OpenAiApiResponse(
         result = com.haruUp.global.openai.OpenAiResult(
-            message = com.haruUp.global.openai.OpenAiMessage(role = "assistant", content = "요약")
+            message = com.haruUp.global.openai.OpenAiMessage(role = "assistant", content = content)
         )
     )
+
+    @Test
+    @DisplayName("첫 질문은 선택형 예시 없이 placeholder만 제공한다")
+    fun `첫 질문은 placeholder 제공`() {
+        val response = useCase.startChatbot(memberId = 1L)
+
+        assertTrue(response.examples.isEmpty(), "선택형 예시는 비어 있어야 한다: ${response.examples}")
+        assertEquals(CurationChatbotUseCase.FIRST_QUESTION_PLACEHOLDER, response.placeholder)
+        assertTrue(
+            response.question.contains("직접 입력"),
+            "첫 질문은 직접 입력을 요구해야 한다: ${response.question}"
+        )
+    }
+
+    @Test
+    @DisplayName("요약은 미션 생성용 상세본과 사용자 노출용 간략본으로 나뉘어 저장된다")
+    fun `요약 2종 저장`() {
+        stubSession(questionCount = 6, requiresTime = false, history = historyThroughLastFollowUp())
+        whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
+            .thenReturn(
+                summaryResponse(
+                    """{"detailed":"토익 700점에서 900점이 목표입니다. 취업을 위해 필요합니다.","brief":"토익 900점이 목표예요."}"""
+                )
+            )
+        val goalCaptor = argumentCaptor<com.haruUp.goal.domain.MemberGoal>()
+        whenever(memberGoalRepository.save(goalCaptor.capture())).thenAnswer { it.arguments[0] }
+        whenever(goalBasedMissionGenerationService.generateAndSaveMissions(any(), any(), any(), anyOrNull(), any()))
+            .thenReturn(emptyList())
+
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+
+        val completed = assertInstanceOf(ChatbotCompleteResponse::class.java, response)
+        assertEquals("토익 900점이 목표예요.", completed.summary)
+
+        val savedGoal = goalCaptor.firstValue
+        assertEquals("토익 700점에서 900점이 목표입니다. 취업을 위해 필요합니다.", savedGoal.conversationSummary)
+        assertEquals("토익 900점이 목표예요.", savedGoal.userSummary)
+    }
 }
