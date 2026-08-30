@@ -177,7 +177,7 @@ class CurationPromptEvaluationTest {
                 apiCalls++
 
                 val parsed = ChatbotQuestionValidator.parse(raw)
-                val violation = ChatbotQuestionValidator.findViolation(parsed)
+                val violation = ChatbotQuestionValidator.findViolation(parsed, previousQuestions)
                 lastCandidate = parsed.copy(question = ChatbotQuestionValidator.takeFirstQuestion(parsed.question))
                 lastViolation = violation
 

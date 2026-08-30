@@ -81,10 +81,13 @@ object ChatbotQuestionValidator {
 
     /**
      * 질문과 예시 답변의 위반 사유를 반환한다. 문제가 없으면 null을 반환한다.
+     *
+     * @param previousQuestions 이미 사용자에게 나간 질문 목록. 의미 중복 검사에 사용한다.
      */
-    fun findViolation(parsed: ParsedQuestion): String? {
+    fun findViolation(parsed: ParsedQuestion, previousQuestions: List<String> = emptyList()): String? {
         findQuestionViolation(parsed.question)?.let { return it }
-        return findExamplesViolation(parsed.examples)
+        findExamplesViolation(parsed.examples)?.let { return it }
+        return ChatbotQuestionDuplicateChecker.findDuplicate(parsed.question, previousQuestions)
     }
 
     private fun findQuestionViolation(question: String): String? {

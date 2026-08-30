@@ -299,7 +299,7 @@ class CurationChatbotUseCase(
                 return@repeat
             }
 
-            val violation = ChatbotQuestionValidator.findViolation(parsed)
+            val violation = ChatbotQuestionValidator.findViolation(parsed, previousQuestions)
             // 여러 질문이 붙어 나온 경우를 대비해 항상 첫 번째 질문까지만 사용
             val result = parsed.copy(question = ChatbotQuestionValidator.takeFirstQuestion(parsed.question))
 
