@@ -1,6 +1,7 @@
 package com.haruUp.character.controller
 
 import com.haruUp.character.application.CharacterUseCase
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.character.domain.dto.CharacterDto
 import com.haruUp.global.common.ApiResponse
 import com.haruUp.global.security.MemberPrincipal
@@ -43,8 +44,39 @@ class CharacterController(
     }
 
 
+    // 선택 가능한 AI 성격 목록 (캐릭터 성격 선택 화면)
+    @GetMapping("/personality/list")
+    fun getPersonalityList(
+        @AuthenticationPrincipal principal: MemberPrincipal
+    ): ApiResponse<List<PersonalityResponse>> {
+        val personalities = CharacterPersonality.entries.map {
+            PersonalityResponse(code = it.name, label = it.label)
+        }
+        return ApiResponse.success(personalities)
+    }
+
+    // AI 성격 선택 (캐릭터 선택 이후, 챗봇 시작 전)
+    @PostMapping("/personality")
+    fun selectPersonality(
+        @AuthenticationPrincipal principal: MemberPrincipal,
+        @RequestBody request: SelectPersonalityRequest
+    ): ApiResponse<String> {
+        characterUseCase.selectPersonality(principal.id, request.personality)
+        return ApiResponse.success("OK")
+    }
+
     data class SelectCharacterRequest(
         val characterId: Long
     )
 
+    data class SelectPersonalityRequest(
+        val personality: CharacterPersonality
+    )
+
+    data class PersonalityResponse(
+        /** 선택 시 그대로 돌려보낼 값 */
+        val code: String,
+        /** 사용자에게 보여줄 문구 */
+        val label: String
+    )
 }

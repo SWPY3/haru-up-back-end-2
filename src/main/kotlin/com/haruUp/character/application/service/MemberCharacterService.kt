@@ -1,5 +1,6 @@
 package com.haruUp.character.application.service
 
+import com.haruUp.character.domain.CharacterPersonality
 import com.haruUp.character.domain.Level
 import com.haruUp.character.domain.MemberCharacter
 import com.haruUp.character.domain.dto.LevelDto
@@ -25,6 +26,15 @@ class MemberCharacterService(
             levelId = levelId
         )
 
+        return memberCharacterRepository.save(mc)
+    }
+
+    /** 회원이 고른 AI 성격을 저장한다. */
+    @Transactional
+    fun selectPersonality(memberId: Long, personality: CharacterPersonality): MemberCharacter {
+        val mc = getSelectedCharacter(memberId)
+            ?: throw IllegalArgumentException("선택된 캐릭터가 없습니다. 캐릭터를 먼저 선택해주세요.")
+        mc.changePersonality(personality)
         return memberCharacterRepository.save(mc)
     }
 
