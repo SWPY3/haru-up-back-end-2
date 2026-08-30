@@ -132,6 +132,7 @@ class CurationChatbotUseCase(
         return ChatbotStartResponse(
             sessionId = sessionId,
             question = firstQuestionText,
+            characterName = profile.name,
             examples = emptyList(),
             placeholder = FIRST_QUESTION_PLACEHOLDER,
             questionNumber = 1

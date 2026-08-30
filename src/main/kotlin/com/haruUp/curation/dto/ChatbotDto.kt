@@ -12,6 +12,16 @@ data class ChatbotStartResponse(
 
     @Schema(
         description = """
+            회원이 고른 캐릭터 이름. 첫 질문 문구에도 이 이름이 들어간다.
+            클라이언트가 이름을 따로 관리하면 서버가 쓰는 이름과 어긋날 수 있어 함께 내려준다.
+            캐릭터를 아직 고르지 않았으면 기본 이름이 들어간다.
+        """,
+        example = "하루"
+    )
+    val characterName: String,
+
+    @Schema(
+        description = """
             선택형 예시 답변 목록.
             첫 질문에서는 사용자가 예시를 그대로 선택해 목표가 구체화되지 않는 문제가 있어 항상 비어 있다.
             대신 placeholder로 예시를 보여준다.

@@ -106,6 +106,10 @@ class CurationChatbotPersonalityTest {
             response.question.contains("초코"),
             "첫 질문에 캐릭터 이름이 들어가야 한다: ${response.question}"
         )
+        assertEquals(
+            "초코", response.characterName,
+            "클라이언트가 이름을 따로 관리하지 않도록 응답에도 담아야 한다"
+        )
     }
 
     @Test
@@ -116,6 +120,7 @@ class CurationChatbotPersonalityTest {
         val response = useCase.startChatbot(memberId = 1L)
 
         assertTrue(response.question.contains(CharacterUseCase.DEFAULT_CHARACTER_NAME))
+        assertEquals(CharacterUseCase.DEFAULT_CHARACTER_NAME, response.characterName)
     }
 
     @Test
