@@ -100,7 +100,38 @@ data class ChatbotGoalRejectedResponse(
     val questionNumber: Int = 1
 )
 
-@Schema(description = "챗봇 완료 응답 (6번째 질문 답변 후) - 미션 목록 포함")
+@Schema(
+    description = """
+        마무리 확인 응답.
+        AI가 미션을 만들기에 충분한 정보를 모았다고 판단했을 때, 요약을 보여주고 마무리할지 묻는다.
+        사용자가 "예"를 고르면 마무리, "아니오"를 고르면 질문을 이어간다.
+        응답은 다음 /answer 요청의 answer 필드에 examples 중 하나를 그대로 담아 보내면 된다.
+    """
+)
+data class ChatbotFinishConfirmResponse(
+    @Schema(description = "세션 ID")
+    val sessionId: String,
+
+    @Schema(description = "지금까지의 대화를 사용자에게 보여주는 짧은 요약")
+    val summary: String,
+
+    @Schema(description = "마무리 여부를 묻는 질문", example = "이대로 마무리할까요?")
+    val question: String,
+
+    @Schema(
+        description = "선택지. 첫 번째가 마무리, 두 번째가 대화 계속",
+        example = "[\"네, 미션 만들어주세요\", \"아니요, 더 이야기할게요\"]"
+    )
+    val examples: List<String>,
+
+    @Schema(description = "지금까지 답변한 꼬리질문 수", example = "3")
+    val answeredCount: Int,
+
+    @Schema(description = "마무리 확인 단계 여부 (항상 true)", example = "true")
+    val awaitingFinishConfirmation: Boolean = true
+)
+
+@Schema(description = "챗봇 완료 응답 - 미션 목록 포함")
 data class ChatbotCompleteResponse(
     @Schema(description = "완료 여부", example = "true")
     val isCompleted: Boolean,

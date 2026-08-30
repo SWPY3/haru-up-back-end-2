@@ -140,33 +140,57 @@ class CurationChatbotGoalValidationTest {
     }
 
     /** 지정한 상태의 세션을 Redis에서 읽어오도록 스텁한다. */
-    private fun stubSession(questionCount: Int, requiresTime: Boolean?, history: List<String>) {
+    private fun stubSession(
+        questionCount: Int,
+        requiresTime: Boolean?,
+        history: List<String>,
+        awaitingFinishConfirmation: Boolean = false,
+        awaitingTimeAnswer: Boolean = false,
+        pendingSummary: ConversationSummaryParser.ConversationSummaries? = null
+    ) {
         val session = ChatbotSession(
             memberId = 1L,
             questionCount = questionCount,
             history = history,
             firstAnswer = "토익 900점",
-            requiresTimeInvestment = requiresTime
+            requiresTimeInvestment = requiresTime,
+            awaitingFinishConfirmation = awaitingFinishConfirmation,
+            awaitingTimeAnswer = awaitingTimeAnswer,
+            pendingSummary = pendingSummary
         )
         whenever(valueOperations.get(sessionKey)).thenReturn(objectMapper.writeValueAsString(session))
     }
 
-    /** 꼬리질문 6개가 모두 끝난 시점의 history [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5, Q6] */
-    private fun historyThroughLastFollowUp() = listOf(
-        "토익 900점", "Q2", "A2", "Q3", "A3", "Q4", "A4", "Q5", "A5", "Q6"
-    )
+    /**
+     * 꼬리질문을 [answered]개 주고받은 시점의 history.
+     * 구조: [목표답변, Q2, A2, Q3, A3, ...] - 마지막 질문의 답변은 아직 없다.
+     */
+    private fun historyAfter(answered: Int): List<String> {
+        val history = mutableListOf("토익 900점")
+        repeat(answered) { index ->
+            history.add("Q${index + 2}")
+            if (index < answered - 1) history.add("A${index + 2}")
+        }
+        return history
+    }
+
+    /** 꼬리질문 상한(8개)까지 답변이 찬 세션의 questionCount */
+    private val questionCountAtMax = CurationChatbotUseCase.MAX_FOLLOW_UP_QUESTIONS + 1
 
     @Test
     @DisplayName("시간 투자가 필요한 목표면 마지막 꼬리질문 뒤에 고정 시간 질문을 반환한다")
     fun `시간 필요 목표는 시간 질문 추가`() {
-        stubSession(questionCount = 6, requiresTime = true, history = historyThroughLastFollowUp())
+        stubSession(
+            questionCount = questionCountAtMax,
+            requiresTime = true,
+            history = historyAfter(CurationChatbotUseCase.MAX_FOLLOW_UP_QUESTIONS)
+        )
 
-        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "마지막 답변"))
 
         val answered = assertInstanceOf(ChatbotAnswerResponse::class.java, response)
         assertEquals(CurationChatbotUseCase.TIME_QUESTION, answered.question)
         assertEquals(listOf("10분 이내", "30분", "1시간 이상"), answered.examples)
-        assertEquals(CurationChatbotUseCase.TIME_QUESTION_NUMBER, answered.questionNumber)
         assertEquals(ChatbotQuestionType.FIXED_TIME, answered.questionType)
         assertTrue(answered.isLast)
     }
@@ -174,13 +198,17 @@ class CurationChatbotGoalValidationTest {
     @Test
     @DisplayName("시간 투자가 필요 없는 목표면 시간 질문 없이 바로 대화를 마무리한다")
     fun `시간 불필요 목표는 시간 질문 생략`() {
-        stubSession(questionCount = 6, requiresTime = false, history = historyThroughLastFollowUp())
+        stubSession(
+            questionCount = questionCountAtMax,
+            requiresTime = false,
+            history = historyAfter(CurationChatbotUseCase.MAX_FOLLOW_UP_QUESTIONS)
+        )
         whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
             .thenReturn(summaryResponse())
         whenever(goalBasedMissionGenerationService.generateAndSaveMissions(any(), any(), any(), anyOrNull(), any()))
             .thenReturn(emptyList())
 
-        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "마지막 답변"))
 
         assertInstanceOf(ChatbotCompleteResponse::class.java, response)
     }
@@ -189,9 +217,11 @@ class CurationChatbotGoalValidationTest {
     @DisplayName("시간 질문에 답하면 대화가 종료되고 답변이 미션 생성 맥락에 포함된다")
     fun `시간 답변 후 종료`() {
         stubSession(
-            questionCount = CurationChatbotUseCase.TIME_QUESTION_NUMBER,
+            questionCount = questionCountAtMax,
             requiresTime = true,
-            history = historyThroughLastFollowUp() + listOf("A6", CurationChatbotUseCase.TIME_QUESTION)
+            history = historyAfter(CurationChatbotUseCase.MAX_FOLLOW_UP_QUESTIONS) +
+                listOf("마지막 답변", CurationChatbotUseCase.TIME_QUESTION),
+            awaitingTimeAnswer = true
         )
         whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
             .thenReturn(summaryResponse())
@@ -238,7 +268,11 @@ class CurationChatbotGoalValidationTest {
     @Test
     @DisplayName("요약은 미션 생성용 상세본과 사용자 노출용 간략본으로 나뉘어 저장된다")
     fun `요약 2종 저장`() {
-        stubSession(questionCount = 6, requiresTime = false, history = historyThroughLastFollowUp())
+        stubSession(
+            questionCount = questionCountAtMax,
+            requiresTime = false,
+            history = historyAfter(CurationChatbotUseCase.MAX_FOLLOW_UP_QUESTIONS)
+        )
         whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
             .thenReturn(
                 summaryResponse(
@@ -250,7 +284,7 @@ class CurationChatbotGoalValidationTest {
         whenever(goalBasedMissionGenerationService.generateAndSaveMissions(any(), any(), any(), anyOrNull(), any()))
             .thenReturn(emptyList())
 
-        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "마지막 답변"))
 
         val completed = assertInstanceOf(ChatbotCompleteResponse::class.java, response)
         assertEquals("토익 900점이 목표예요.", completed.summary)
