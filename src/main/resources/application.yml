@@ -8,6 +8,14 @@ spring:
   config:
     import: optional:classpath:env.properties
 
+  # ddl-auto: none 이므로 엔티티에 추가된 컬럼은 schema.sql 이 보정한다.
+  # schema.sql 은 IF NOT EXISTS 로만 작성되어 매 기동마다 실행돼도 안전하다.
+  # 실패하면 스키마가 어긋난 채로 뜨는 것이므로 continue-on-error 는 켜지 않는다.
+  sql:
+    init:
+      mode: always
+      continue-on-error: false
+
   datasource:
     # PostgreSQL (Local Docker) - p6spy 비활성화 (hypersistence-utils 호환성 문제)
     driver-class-name: org.postgresql.Driver
