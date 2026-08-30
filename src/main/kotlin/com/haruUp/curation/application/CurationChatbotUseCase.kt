@@ -6,6 +6,7 @@ import com.haruUp.curation.dto.ChatbotAnswerResponse
 import com.haruUp.curation.dto.ChatbotCompleteResponse
 import com.haruUp.curation.dto.ChatbotGoalRejectedResponse
 import com.haruUp.curation.dto.ChatbotMissionDto
+import com.haruUp.curation.dto.ChatbotQuestionType
 import com.haruUp.curation.dto.ChatbotStartResponse
 import com.haruUp.global.openai.ChatMessage
 import com.haruUp.global.openai.OpenAiApiClient
@@ -48,6 +49,21 @@ class CurationChatbotUseCase(
             "📈 주식 수익률 월 1%"
         )
 
+        /**
+         * 투자 가능 시간 질문 번호.
+         *
+         * 시간 투자가 필요한 목표일 때만 꼬리질문 뒤에 한 번 더 붙는 고정 질문이다.
+         * AI가 만드는 질문이 아니므로 [ChatbotQuestionPrompt] 에서는 시간 질문을 전면 금지하고,
+         * 여기서만 정해진 선택지로 묻는다.
+         */
+        const val TIME_QUESTION_NUMBER = TOTAL_QUESTIONS + 1
+
+        const val TIME_QUESTION = "목표를 위해 하루에 쓸 수 있는 시간이 얼마인가요?"
+        private val TIME_QUESTION_EXAMPLES = listOf(
+            "10분 이내",
+            "30분",
+            "1시간 이상"
+        )
     }
 
     /**
@@ -125,7 +141,8 @@ class CurationChatbotUseCase(
             )
             val nextQuestion = next.question
             val nextQuestionCount = session.questionCount + 1
-            val isLast = nextQuestionCount == TOTAL_QUESTIONS
+            // 시간 투자가 필요한 목표면 꼬리질문 뒤에 고정 시간 질문이 한 번 더 붙는다.
+            val isLast = nextQuestionCount == TOTAL_QUESTIONS && requiresTimeInvestment != true
 
             // 세션 업데이트 (history에 방금 생성된 질문도 추가)
             val questionHistory = updatedHistory.toMutableList().also { it.add(nextQuestion) }
@@ -148,6 +165,31 @@ class CurationChatbotUseCase(
                 questionNumber = nextQuestionCount,
                 isLast = isLast
             )
+        } else if (session.questionCount == TOTAL_QUESTIONS && requiresTimeInvestment == true) {
+            // 마지막 꼬리질문까지 답변 완료 → 투자 가능 시간을 고정 선택지로 한 번 더 묻는다.
+            val questionHistory = updatedHistory.toMutableList().also { it.add(TIME_QUESTION) }
+            val updatedSession = session.copy(
+                questionCount = TIME_QUESTION_NUMBER,
+                history = questionHistory,
+                firstAnswer = updatedFirstAnswer,
+                requiresTimeInvestment = true
+            )
+            redisTemplate.opsForValue().set(
+                sessionKey,
+                objectMapper.writeValueAsString(updatedSession),
+                Duration.ofMinutes(SESSION_TTL_MINUTES)
+            )
+
+            logger.info("투자 가능 시간 질문 반환 - memberId: ${session.memberId}, 목표: $updatedFirstAnswer")
+
+            ChatbotAnswerResponse(
+                sessionId = request.sessionId,
+                question = TIME_QUESTION,
+                examples = TIME_QUESTION_EXAMPLES,
+                questionNumber = TIME_QUESTION_NUMBER,
+                isLast = true,
+                questionType = ChatbotQuestionType.FIXED_TIME
+            )
         } else {
             // 6번째 질문 답변 완료 → 대화 종료 처리
             val allHistory = updatedHistory
@@ -166,7 +208,7 @@ class CurationChatbotUseCase(
             }
 
             // 원본 대화 JSON으로 변환
-            val conversationRaw = buildConversationRaw(session.history, allHistory)
+            val conversationRaw = buildConversationRaw(allHistory)
 
             // 새 MemberGoal 저장
             val memberGoal = MemberGoal(
@@ -271,8 +313,9 @@ class CurationChatbotUseCase(
     /**
      * 전체 Q&A 대화를 가독성 있는 텍스트 형식으로 변환합니다.
      * finalHistory 구조: [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5, Q6, A6]
+     * 시간 투자가 필요한 목표면 뒤에 [Q7(투자 가능 시간), A7]이 더 붙는다.
      */
-    private fun buildConversationRaw(questionHistory: List<String>, finalHistory: List<String>): String {
+    private fun buildConversationRaw(finalHistory: List<String>): String {
         return buildString {
             append("Q1: $FIRST_QUESTION\n")
             finalHistory.forEachIndexed { index, text ->

@@ -26,6 +26,15 @@ data class ChatbotAnswerRequest(
     val answer: String
 )
 
+@Schema(description = "질문 유형")
+enum class ChatbotQuestionType {
+    @Schema(description = "AI가 대화 맥락에 맞춰 생성한 꼬리질문")
+    AI_FOLLOW_UP,
+
+    @Schema(description = "투자 가능 시간을 묻는 고정 질문 (시간 투자가 필요한 목표에서만 등장)")
+    FIXED_TIME
+}
+
 @Schema(description = "챗봇 답변 응답 (대화 진행 중)")
 data class ChatbotAnswerResponse(
     @Schema(description = "세션 ID")
@@ -44,7 +53,16 @@ data class ChatbotAnswerResponse(
     val questionNumber: Int,
 
     @Schema(description = "마지막 질문 여부", example = "false")
-    val isLast: Boolean
+    val isLast: Boolean,
+
+    @Schema(
+        description = """
+            질문 유형. FIXED_TIME이면 examples를 고정 선택지로 표시한다.
+            어느 유형이든 사용자는 예시를 고르거나 직접 입력할 수 있다.
+        """,
+        example = "AI_FOLLOW_UP"
+    )
+    val questionType: ChatbotQuestionType = ChatbotQuestionType.AI_FOLLOW_UP
 )
 
 @Schema(

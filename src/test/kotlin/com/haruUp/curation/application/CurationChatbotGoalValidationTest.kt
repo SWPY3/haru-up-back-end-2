@@ -3,7 +3,9 @@ package com.haruUp.curation.application
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.haruUp.curation.dto.ChatbotAnswerRequest
 import com.haruUp.curation.dto.ChatbotAnswerResponse
+import com.haruUp.curation.dto.ChatbotCompleteResponse
 import com.haruUp.curation.dto.ChatbotGoalRejectedResponse
+import com.haruUp.curation.dto.ChatbotQuestionType
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.prompt.ChatbotQuestionPrompt
 import com.haruUp.global.prompt.GoalValidationPrompt
@@ -12,6 +14,7 @@ import com.haruUp.mission.application.GoalBasedMissionGenerationService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -22,6 +25,7 @@ import org.mockito.Mockito.verify
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.whenever
@@ -134,4 +138,87 @@ class CurationChatbotGoalValidationTest {
 
         assertInstanceOf(ChatbotAnswerResponse::class.java, response)
     }
+
+    /** 지정한 상태의 세션을 Redis에서 읽어오도록 스텁한다. */
+    private fun stubSession(questionCount: Int, requiresTime: Boolean?, history: List<String>) {
+        val session = ChatbotSession(
+            memberId = 1L,
+            questionCount = questionCount,
+            history = history,
+            firstAnswer = "토익 900점",
+            requiresTimeInvestment = requiresTime
+        )
+        whenever(valueOperations.get(sessionKey)).thenReturn(objectMapper.writeValueAsString(session))
+    }
+
+    /** 꼬리질문 6개가 모두 끝난 시점의 history [A1, Q2, A2, Q3, A3, Q4, A4, Q5, A5, Q6] */
+    private fun historyThroughLastFollowUp() = listOf(
+        "토익 900점", "Q2", "A2", "Q3", "A3", "Q4", "A4", "Q5", "A5", "Q6"
+    )
+
+    @Test
+    @DisplayName("시간 투자가 필요한 목표면 마지막 꼬리질문 뒤에 고정 시간 질문을 반환한다")
+    fun `시간 필요 목표는 시간 질문 추가`() {
+        stubSession(questionCount = 6, requiresTime = true, history = historyThroughLastFollowUp())
+
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+
+        val answered = assertInstanceOf(ChatbotAnswerResponse::class.java, response)
+        assertEquals(CurationChatbotUseCase.TIME_QUESTION, answered.question)
+        assertEquals(listOf("10분 이내", "30분", "1시간 이상"), answered.examples)
+        assertEquals(CurationChatbotUseCase.TIME_QUESTION_NUMBER, answered.questionNumber)
+        assertEquals(ChatbotQuestionType.FIXED_TIME, answered.questionType)
+        assertTrue(answered.isLast)
+    }
+
+    @Test
+    @DisplayName("시간 투자가 필요 없는 목표면 시간 질문 없이 바로 대화를 마무리한다")
+    fun `시간 불필요 목표는 시간 질문 생략`() {
+        stubSession(questionCount = 6, requiresTime = false, history = historyThroughLastFollowUp())
+        whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
+            .thenReturn(summaryResponse())
+        whenever(goalBasedMissionGenerationService.generateAndSaveMissions(any(), any(), any(), anyOrNull(), any()))
+            .thenReturn(emptyList())
+
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "A6"))
+
+        assertInstanceOf(ChatbotCompleteResponse::class.java, response)
+    }
+
+    @Test
+    @DisplayName("시간 질문에 답하면 대화가 종료되고 답변이 미션 생성 맥락에 포함된다")
+    fun `시간 답변 후 종료`() {
+        stubSession(
+            questionCount = CurationChatbotUseCase.TIME_QUESTION_NUMBER,
+            requiresTime = true,
+            history = historyThroughLastFollowUp() + listOf("A6", CurationChatbotUseCase.TIME_QUESTION)
+        )
+        whenever(openAiApiClient.chatCompletion(any(), anyOrNull(), any(), any(), any(), any(), any(), anyOrNull()))
+            .thenReturn(summaryResponse())
+        val contextCaptor = argumentCaptor<String>()
+        whenever(
+            goalBasedMissionGenerationService.generateAndSaveMissions(
+                any(), any(), any(), contextCaptor.capture(), any()
+            )
+        ).thenReturn(emptyList())
+
+        val response = useCase.answer(ChatbotAnswerRequest(sessionId, "30분"))
+
+        assertInstanceOf(ChatbotCompleteResponse::class.java, response)
+        val conversationRaw = contextCaptor.firstValue
+        assertTrue(
+            conversationRaw.contains(CurationChatbotUseCase.TIME_QUESTION),
+            "미션 생성 맥락에 시간 질문이 포함되어야 한다: $conversationRaw"
+        )
+        assertTrue(
+            conversationRaw.contains("30분"),
+            "미션 생성 맥락에 시간 답변이 포함되어야 한다: $conversationRaw"
+        )
+    }
+
+    private fun summaryResponse() = com.haruUp.global.openai.OpenAiApiResponse(
+        result = com.haruUp.global.openai.OpenAiResult(
+            message = com.haruUp.global.openai.OpenAiMessage(role = "assistant", content = "요약")
+        )
+    )
 }
