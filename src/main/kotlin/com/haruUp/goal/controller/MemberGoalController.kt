@@ -34,13 +34,17 @@ class MemberGoalController(
     data class MemberGoalResponse(
         val id: Long,
         val goalText: String,
+        /**
+         * 사용자에게 보여줄 짧은 요약.
+         * 사용자 요약이 도입되기 전에 만들어진 목표는 상세 요약으로 대체한다.
+         */
         val conversationSummary: String
     ) {
         companion object {
             fun from(goal: MemberGoal): MemberGoalResponse = MemberGoalResponse(
                 id = goal.id!!,
                 goalText = goal.goalText,
-                conversationSummary = goal.conversationSummary
+                conversationSummary = goal.userSummary ?: goal.conversationSummary
             )
         }
     }
