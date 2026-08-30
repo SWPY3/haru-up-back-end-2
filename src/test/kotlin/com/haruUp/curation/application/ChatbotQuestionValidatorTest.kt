@@ -103,4 +103,29 @@ class ChatbotQuestionValidatorTest {
 
         assertEquals("하루에 몇 분인가요?", result)
     }
+
+    @Test
+    @DisplayName("이전 질문과 의미가 중복되면 탈락한다")
+    fun `의미 중복 질문 탈락`() {
+        val parsed = ChatbotQuestionValidator.parse(
+            """{"question":"목표 체중을 몇 kg으로 잡으셨나요?","examples":["60kg","65kg","70kg"]}"""
+        )
+
+        assertNull(ChatbotQuestionValidator.findViolation(parsed), "이전 질문이 없으면 통과해야 한다")
+        assertNotNull(
+            ChatbotQuestionValidator.findViolation(parsed, listOf("목표로 하는 감량 폭이 몇 kg인가요?"))
+        )
+    }
+
+    @Test
+    @DisplayName("이전 질문과 묻는 정보가 다르면 통과한다")
+    fun `다른 정보를 묻는 질문은 통과`() {
+        val parsed = ChatbotQuestionValidator.parse(
+            """{"question":"지금 체중이 몇 kg인가요?","examples":["60kg대","70kg대","80kg대"]}"""
+        )
+
+        assertNull(
+            ChatbotQuestionValidator.findViolation(parsed, listOf("목표 체중을 몇 kg으로 잡으셨나요?"))
+        )
+    }
 }
