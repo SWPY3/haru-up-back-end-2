@@ -167,7 +167,7 @@ class GoalBasedMissionGenerationService(
         fallbackMissions?.let { missions ->
             logger.warn(
                 "${MAX_MISSION_RETRY}회 시도 후에도 글자수·문법·중복 검증을 통과하지 못해 " +
-                "가장 위반이 적은 결과를 사용합니다 (위반 ${countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
+                "가장 위반이 적은 결과를 사용합니다 (위반 ${GeneratedMissionValidator.countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
             )
             logGeneratedMissions(memberId, missions)
             return missions
