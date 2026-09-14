@@ -64,6 +64,14 @@ class CurationChatbotUseCase(
         const val MAX_QUESTION_RETRY = 3
 
         /**
+         * 요약 생성 최대 시도 횟수. (최초 1회 + 재생성 1회)
+         *
+         * 요약은 사용자가 결과를 기다리는 구간에서 호출되므로 재시도를 길게 잡지 않는다.
+         * 기준을 넘겨도 큐레이션을 실패시키지 않고 마지막 결과를 그대로 쓴다.
+         */
+        const val MAX_SUMMARY_ATTEMPTS = 2
+
+        /**
          * 첫 질문 문구를 회원이 고른 캐릭터 이름으로 만든다.
          * 캐릭터를 고르지 않았으면 기본 이름이 들어간다.
          */
@@ -583,19 +591,48 @@ class CurationChatbotUseCase(
         history: List<String>
     ): ConversationSummaryParser.ConversationSummaries {
         val conversationText = ChatbotSummaryPrompt.buildConversationText(goalText, history)
+        var fallback: ConversationSummaryParser.ConversationSummaries? = null
+        var retryHint = ""
 
-        val messages = listOf(
-            ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
-            ChatMessage(role = "user", content = conversationText)
+        repeat(MAX_SUMMARY_ATTEMPTS) { attempt ->
+            val messages = listOf(
+                ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
+                ChatMessage(role = "user", content = conversationText + retryHint)
+            )
+
+            val raw = openAiApiClient.chatCompletion(
+                messages = messages,
+                model = OpenAiApiClient.MODEL_DEFAULT,
+                temperature = 0.5
+            ).result?.message?.content.orEmpty()
+
+            val summaries = ConversationSummaryParser.parse(raw)
+            val violation = ConversationSummaryParser.findBriefViolation(summaries)
+
+            if (violation == null) {
+                if (attempt > 0) {
+                    logger.info("요약 brief 검증 통과 (${attempt + 1}번째 시도) - brief: \"${summaries.brief}\"")
+                }
+                return summaries
+            }
+
+            fallback = summaries
+            retryHint = ChatbotSummaryPrompt.buildRetryHint(summaries.brief, violation)
+            logger.warn(
+                "요약 brief 검증 실패 (시도 ${attempt + 1}/$MAX_SUMMARY_ATTEMPTS) " +
+                "- 사유: $violation, brief: \"${summaries.brief}\""
+            )
+        }
+
+        // 요약이 길다고 큐레이션 전체를 실패시킬 수는 없으므로 마지막 결과를 그대로 사용한다.
+        return fallback?.also {
+            logger.warn(
+                "${MAX_SUMMARY_ATTEMPTS}회 시도 후에도 brief가 기준을 넘어 그대로 사용합니다 - brief: \"${it.brief}\""
+            )
+        } ?: ConversationSummaryParser.ConversationSummaries(
+            ConversationSummaryParser.FALLBACK_SUMMARY,
+            ConversationSummaryParser.FALLBACK_SUMMARY
         )
-
-        val raw = openAiApiClient.chatCompletion(
-            messages = messages,
-            model = OpenAiApiClient.MODEL_DEFAULT,
-            temperature = 0.5
-        ).result?.message?.content.orEmpty()
-
-        return ConversationSummaryParser.parse(raw)
     }
 }
 

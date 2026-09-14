@@ -56,4 +56,18 @@ AI가 이 사용자에게 맞는 미션을 설계할 때 참고할 정보입니�
             }
         }
     }
+
+    /**
+     * brief 길이 위반으로 재생성할 때 덧붙이는 교정 지시문
+     *
+     * @param rejected 직전에 생성됐지만 검증에서 탈락한 brief 요약
+     * @param reason 탈락 사유
+     */
+    fun buildRetryHint(rejected: String, reason: String): String {
+        return "\n\n[직전 생성 실패 - 반드시 고쳐서 다시 만드세요]\n" +
+            "탈락한 brief: $rejected\n" +
+            "탈락 사유: $reason\n" +
+            "detailed는 그대로 두고 brief만 다시 쓰세요. 문장을 자르지 말고 처음부터 다시 씁니다.\n" +
+            "목표와 가장 가까운 수치 1~2개만 남기고, 공백 포함 80자 이내 1~2문장으로 줄인 뒤 JSON 한 줄만 출력하세요."
+    }
 }
