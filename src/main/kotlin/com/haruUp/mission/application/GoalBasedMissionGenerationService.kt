@@ -160,22 +160,12 @@ class GoalBasedMissionGenerationService(
                             " - memberId: $memberId"
                         )
                     }
-                    if (shortDescriptions.isNotEmpty()) {
-                        logger.warn(
-                            "미션 description 글자수 미달 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${MIN_DESCRIPTION_LENGTH}자 미만 ${shortDescriptions.size}개: " +
-                            shortDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
-                            " - memberId: $memberId"
-                        )
-                    }
-                    if (longDescriptions.isNotEmpty()) {
-                        logger.warn(
-                            "미션 description 글자수 초과 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${MAX_DESCRIPTION_LENGTH}자 초과 ${longDescriptions.size}개: " +
-                            longDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
-                            " - memberId: $memberId"
-                        )
-                    }
+                    logLengthViolations(
+                        memberId, attempt, "description", "${MIN_DESCRIPTION_LENGTH}자 미만", shortDescriptions
+                    ) { it.description }
+                    logLengthViolations(
+                        memberId, attempt, "description", "${MAX_DESCRIPTION_LENGTH}자 초과", longDescriptions
+                    ) { it.description }
                     if (grammarViolations.isNotEmpty()) {
                         logger.warn(
                             "미션 한국어 문법 오류 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
@@ -221,6 +211,33 @@ class GoalBasedMissionGenerationService(
             "[난이도 ${it.difficulty}] ${it.content} | ${it.description} (${it.description.length}자)"
         }
         logger.info("생성된 미션 목록 - memberId: $memberId, ${missions.size}개\n$formatted")
+    }
+
+    /**
+     * 글자수 기준을 벗어난 미션을 경고 로그로 남깁니다. 위반이 없으면 아무것도 남기지 않습니다.
+     *
+     * @param field 로그에 표시할 필드명 ("content" 또는 "description")
+     * @param bound 벗어난 기준 (예: "20자 미만")
+     * @param violations 기준을 벗어난 미션 목록
+     * @param valueOf 글자수를 잰 값 (해당 필드)
+     */
+    private fun logLengthViolations(
+        memberId: Long,
+        attempt: Int,
+        field: String,
+        bound: String,
+        violations: List<ParsedMission>,
+        valueOf: (ParsedMission) -> String
+    ) {
+        if (violations.isEmpty()) return
+
+        val values = violations.map(valueOf)
+        logger.warn(
+            "미션 $field 글자수 위반 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+            "- $bound ${values.size}개: " +
+            values.joinToString { "\"$it\"(${it.length}자)" } +
+            " - memberId: $memberId"
+        )
     }
 
     /**
