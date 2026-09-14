@@ -84,16 +84,31 @@ class ConversationSummaryParserTest {
     }
 
     @Test
-    @DisplayName("프롬프트 기준(80자)을 조금 넘긴 brief는 재생성시키지 않는다")
-    fun `brief 여유 구간`() {
-        // 81자. 화면에서 문제가 되지 않는 수준의 초과까지 재생성(추가 API 호출)시키지 않으려는 설계다.
+    @DisplayName("정확히 80자인 brief는 통과한다")
+    fun `brief 길이 경계 - 통과`() {
+        // 80자. 상한은 포함이다.
+        val summaries = ConversationSummaryParser.ConversationSummaries(
+            detailed = "상세 요약",
+            brief = "해외여행에서 영어로 대화하는 것이 목표이고, 토익 780점이지만 말하기는 거의 못 해요. " +
+                "겨울 유럽 여행의 공항과 호텔 체크인이 가장 걱정돼요."
+        )
+
+        assertEquals(ConversationSummaryParser.MAX_BRIEF_LENGTH, summaries.brief.length)
+        assertNull(ConversationSummaryParser.findBriefViolation(summaries))
+    }
+
+    @Test
+    @DisplayName("81자부터는 위반으로 판정한다")
+    fun `brief 길이 경계 - 위반`() {
+        // 81자. 검증에서 초과한 4건 중 3건이 81~83자여서, 여유를 두면 검증이 사실상 무력해진다.
         val summaries = ConversationSummaryParser.ConversationSummaries(
             detailed = "상세 요약",
             brief = "해외여행에서 영어로 대화하는 것이 목표이고, 토익 780점이지만 말하기는 거의 못 해요. " +
                 "겨울 유럽 여행에서 공항과 호텔 체크인이 가장 걱정돼요."
         )
 
-        assertNull(ConversationSummaryParser.findBriefViolation(summaries))
+        assertEquals(ConversationSummaryParser.MAX_BRIEF_LENGTH + 1, summaries.brief.length)
+        assertNotNull(ConversationSummaryParser.findBriefViolation(summaries))
     }
 
     @Test

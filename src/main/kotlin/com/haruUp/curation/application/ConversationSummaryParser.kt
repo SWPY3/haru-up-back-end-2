@@ -16,13 +16,13 @@ object ConversationSummaryParser {
     const val FALLBACK_SUMMARY = "목표 달성을 위한 대화를 완료했습니다."
 
     /**
-     * brief 최대 길이. 프롬프트(ChatbotSummaryPrompt)의 기준(80자)에 여유를 둔 값.
+     * brief 최대 길이. 프롬프트(ChatbotSummaryPrompt)의 기준과 같은 값이다.
      *
-     * 검증에서 초과한 4건은 81·83·83·96자였다. 1~3자 초과는 화면에서 문제가 되지 않는데
-     * 재생성(추가 API 호출)을 유발하므로, 꼬리질문(45⇒60자)과 같은 방식으로 여유를 둔다.
-     * 다만 brief는 사용자에게 그대로 노출되므로 꼬리질문보다 여유를 좁게 잡았다.
+     * 꼬리질문(45⇒60자)처럼 여유를 두지 않는다.
+     * brief는 사용자 화면에 그대로 노출되는 문장이라 80자가 화면 기준 자체이고,
+     * 검증에서 초과한 4건 중 3건이 81~83자여서 여유를 두면 검증이 사실상 무력해진다.
      */
-    const val MAX_BRIEF_LENGTH = 90
+    const val MAX_BRIEF_LENGTH = 80
 
     private val objectMapper = ObjectMapper()
 
