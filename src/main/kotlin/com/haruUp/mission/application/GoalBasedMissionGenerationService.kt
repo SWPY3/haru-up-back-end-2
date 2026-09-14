@@ -3,7 +3,6 @@ package com.haruUp.mission.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
-import com.haruUp.global.util.KoreanGrammarChecker
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
 import com.haruUp.mission.infrastructure.MemberMissionRepository
@@ -130,16 +129,10 @@ class GoalBasedMissionGenerationService(
 
                 val missions = parseMissions(rawResponse)
 
-                if (validateDifficultyDistribution(missions)) {
-                    val shortDescriptions = missions.filter { it.description.length < MIN_DESCRIPTION_LENGTH }
-                    val longDescriptions = missions.filter { it.description.length > MAX_DESCRIPTION_LENGTH }
-                    val grammarViolations = findGrammarViolations(missions)
-                    // 프롬프트로 "반복 금지"를 지시해도 모델이 같은 미션을 다시 내는 경우가 있어 코드로도 막는다
-                    val duplicated = missions.filter { it.content in pastMissionSet }
+                if (GeneratedMissionValidator.hasValidDifficultyDistribution(missions)) {
+                    val result = GeneratedMissionValidator.validate(missions, pastMissionSet)
 
-                    if (shortDescriptions.isEmpty() && longDescriptions.isEmpty() &&
-                        grammarViolations.isEmpty() && duplicated.isEmpty()
-                    ) {
+                    if (result.passed) {
                         if (attempt > 0) {
                             logger.info("미션 검증 통과 (${attempt + 1}번째 시도) - memberId: $memberId")
                         }
@@ -149,45 +142,17 @@ class GoalBasedMissionGenerationService(
 
                     // 전부 실패하면 가장 덜 어긋난 결과를 쓰기 위해 위반 수가 적은 쪽을 남긴다
                     if (fallbackMissions == null ||
-                        countViolations(missions, pastMissionSet) < countViolations(fallbackMissions!!, pastMissionSet)
+                        GeneratedMissionValidator.countViolations(missions, pastMissionSet) <
+                        GeneratedMissionValidator.countViolations(fallbackMissions!!, pastMissionSet)
                     ) {
                         fallbackMissions = missions
                     }
-                    if (duplicated.isNotEmpty()) {
-                        logger.warn(
-                            "이미 제공한 미션과 중복 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${duplicated.size}개: " + duplicated.joinToString { "\"${it.content}\"" } +
-                            " - memberId: $memberId"
-                        )
-                    }
-                    if (shortDescriptions.isNotEmpty()) {
-                        logger.warn(
-                            "미션 description 글자수 미달 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${MIN_DESCRIPTION_LENGTH}자 미만 ${shortDescriptions.size}개: " +
-                            shortDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
-                            " - memberId: $memberId"
-                        )
-                    }
-                    if (longDescriptions.isNotEmpty()) {
-                        logger.warn(
-                            "미션 description 글자수 초과 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${MAX_DESCRIPTION_LENGTH}자 초과 ${longDescriptions.size}개: " +
-                            longDescriptions.joinToString { "\"${it.description}\"(${it.description.length}자)" } +
-                            " - memberId: $memberId"
-                        )
-                    }
-                    if (grammarViolations.isNotEmpty()) {
-                        logger.warn(
-                            "미션 한국어 문법 오류 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                            "- ${grammarViolations.size}개: " + grammarViolations.joinToString("; ") +
-                            " - memberId: $memberId"
-                        )
-                    }
+                    logViolations(memberId, attempt, result)
                 } else {
                     val grouped = missions.groupBy { it.difficulty }
                     logger.warn(
                         "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                        "- 기대: 난이도별 ${MISSIONS_PER_DIFFICULTY}개, 실제 " +
+                        "- 기대: 난이도별 ${GeneratedMissionValidator.MISSIONS_PER_DIFFICULTY}개, 실제 " +
                         "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
                         "- memberId: $memberId"
                     )
@@ -202,14 +167,15 @@ class GoalBasedMissionGenerationService(
         fallbackMissions?.let { missions ->
             logger.warn(
                 "${MAX_MISSION_RETRY}회 시도 후에도 글자수·문법·중복 검증을 통과하지 못해 " +
-                "가장 위반이 적은 결과를 사용합니다 (위반 ${countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
+                "가장 위반이 적은 결과를 사용합니다 (위반 ${GeneratedMissionValidator.countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
             )
             logGeneratedMissions(memberId, missions)
             return missions
         }
 
         throw lastException ?: IllegalStateException(
-            "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포(난이도별 ${MISSIONS_PER_DIFFICULTY}개)의 미션 생성 실패 - memberId: $memberId"
+            "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포" +
+                "(난이도별 ${GeneratedMissionValidator.MISSIONS_PER_DIFFICULTY}개)의 미션 생성 실패 - memberId: $memberId"
         )
     }
 
@@ -224,39 +190,68 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * description 글자수 기준을 벗어나거나 이미 제공한 미션과 중복되는 건수를 셉니다.
-     * 재시도가 모두 실패했을 때 가장 덜 어긋난 결과를 고르는 데 사용합니다.
+     * 검증에서 걸러진 사유를 경고 로그로 남깁니다.
+     *
+     * 프롬프트를 고칠 근거가 되도록 "무엇이 몇 자여서 걸렸는지"까지 남깁니다.
      */
-    private fun countViolations(missions: List<ParsedMission>, pastMissionSet: Set<String>): Int {
-        return missions.count {
-            it.description.length !in MIN_DESCRIPTION_LENGTH..MAX_DESCRIPTION_LENGTH ||
-                it.content in pastMissionSet
+    private fun logViolations(memberId: Long, attempt: Int, result: GeneratedMissionValidator.Result) {
+        if (result.duplicated.isNotEmpty()) {
+            logger.warn(
+                "이미 제공한 미션과 중복 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                "- ${result.duplicated.size}개: " + result.duplicated.joinToString { "\"${it.content}\"" } +
+                " - memberId: $memberId"
+            )
         }
-    }
-
-    /**
-     * 생성된 미션의 제목/설명에서 명백한 한국어 문법 오류를 찾아 사유 목록으로 반환합니다.
-     * 사용자에게 그대로 노출되는 문장이므로 오류가 있으면 재생성합니다.
-     */
-    private fun findGrammarViolations(missions: List<ParsedMission>): List<String> {
-        return missions.flatMap { mission ->
-            listOfNotNull(
-                KoreanGrammarChecker.findViolation(mission.content)
-                    ?.let { "content \"${mission.content}\" - $it" },
-                KoreanGrammarChecker.findViolation(mission.description)
-                    ?.let { "description \"${mission.description}\" - $it" }
+        logLengthViolations(
+            memberId, attempt, "content",
+            "${GeneratedMissionValidator.MIN_CONTENT_LENGTH}자 미만", result.shortContents
+        ) { it.content }
+        logLengthViolations(
+            memberId, attempt, "content",
+            "${GeneratedMissionValidator.MAX_CONTENT_LENGTH}자 초과", result.longContents
+        ) { it.content }
+        logLengthViolations(
+            memberId, attempt, "description",
+            "${GeneratedMissionValidator.MIN_DESCRIPTION_LENGTH}자 미만", result.shortDescriptions
+        ) { it.description }
+        logLengthViolations(
+            memberId, attempt, "description",
+            "${GeneratedMissionValidator.MAX_DESCRIPTION_LENGTH}자 초과", result.longDescriptions
+        ) { it.description }
+        if (result.grammarViolations.isNotEmpty()) {
+            logger.warn(
+                "미션 한국어 문법 오류 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                "- ${result.grammarViolations.size}개: " + result.grammarViolations.joinToString("; ") +
+                " - memberId: $memberId"
             )
         }
     }
 
     /**
-     * 미션 난이도 분포가 하/중/상 각각 [MISSIONS_PER_DIFFICULTY]개인지 검증합니다.
+     * 글자수 기준을 벗어난 미션을 경고 로그로 남깁니다. 위반이 없으면 아무것도 남기지 않습니다.
+     *
+     * @param field 로그에 표시할 필드명 ("content" 또는 "description")
+     * @param bound 벗어난 기준 (예: "20자 미만")
+     * @param violations 기준을 벗어난 미션 목록
+     * @param valueOf 글자수를 잰 값 (해당 필드)
      */
-    private fun validateDifficultyDistribution(missions: List<ParsedMission>): Boolean {
-        val grouped = missions.groupBy { it.difficulty }
-        return grouped[1]?.size == MISSIONS_PER_DIFFICULTY &&
-            grouped[2]?.size == MISSIONS_PER_DIFFICULTY &&
-            grouped[3]?.size == MISSIONS_PER_DIFFICULTY
+    private fun logLengthViolations(
+        memberId: Long,
+        attempt: Int,
+        field: String,
+        bound: String,
+        violations: List<ParsedMission>,
+        valueOf: (ParsedMission) -> String
+    ) {
+        if (violations.isEmpty()) return
+
+        val values = violations.map(valueOf)
+        logger.warn(
+            "미션 $field 글자수 위반 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+            "- $bound ${values.size}개: " +
+            values.joinToString { "\"$it\"(${it.length}자)" } +
+            " - memberId: $memberId"
+        )
     }
 
     /**
@@ -290,23 +285,8 @@ class GoalBasedMissionGenerationService(
         }
     }
 
-    /** OpenAI 파싱 결과를 담는 내부 데이터 클래스 */
-    private data class ParsedMission(val content: String, val description: String, val difficulty: Int)
-
     companion object {
         const val GOAL_BASED_INTEREST_ID = 0L
-
-        /** 난이도(하/중/상)별로 생성할 미션 수. 프롬프트(DailyMissionFromGoalPrompt)의 개수와 반드시 일치해야 한다. */
-        const val MISSIONS_PER_DIFFICULTY = 5
-
-        /** description 최소 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다. */
-        private const val MIN_DESCRIPTION_LENGTH = 20
-
-        /**
-         * description 최대 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다.
-         * UI 표시 폭이 넓어지면 이 값과 프롬프트의 기준을 함께 올리면 된다.
-         */
-        private const val MAX_DESCRIPTION_LENGTH = 30
 
         private const val MAX_MISSION_RETRY = 3
 

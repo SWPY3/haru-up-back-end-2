@@ -25,6 +25,23 @@ object ChatbotQuestionDuplicateChecker {
         "가용 시간" to Regex("시간|몇\\s*분|몇\\s*시|언제|기한")
     )
 
+    /**
+     * 차단 후보 주제. 아직 재생성 트리거로 쓰지 않고 탐지 로그만 남긴다.
+     *
+     * 검증 15세션 중 13세션에서 의미 중복이 나왔지만, 대부분 명사만 바꾼 유형
+     * ("가장 먼저 하고 싶은 대화 / 상황 / 표현")이라 [SINGLE_USE_TOPICS]와 어휘 유사도 검사
+     * 어디에도 걸리지 않았다. 아래 두 주제를 단일 사용 주제로 올리면 대부분 잡힌다.
+     *
+     * 다만 중복 판정은 곧 재생성(추가 API 호출)이라 오탐 비용이 크고,
+     * 두 패턴 모두 정상 질문까지 잡을 여지가 있다.
+     * ("우선"은 우선순위를 묻지 않는 문장에도 쓰이고, "경험은"은 현재 상태의 다른 축에도 붙는다)
+     * 그래서 바로 막지 않고 로그만 쌓아 오탐률을 확인한 뒤 [SINGLE_USE_TOPICS]로 올린다.
+     */
+    private val SHADOW_TOPICS = listOf(
+        "우선순위" to Regex("가장 먼저|제일 먼저|우선|먼저 (하고|익히고|말하고|바꾸고|연습할)"),
+        "현재 수준" to Regex("어느 수준|어느 정도(인가요|되시나요)|실력|경력|경험은")
+    )
+
     /** "몇 ○○" 형태로 묻는 수량 단위. 긴 단위를 먼저 검사한다. */
     private val QUANTITY_UNIT_REGEX =
         Regex("(?:몇|얼마)\\s*(개비|만원|페이지|시간|칼로리|kg|km|점|분|개|번|회|원|권|쪽|잔)")
@@ -85,6 +102,31 @@ object ChatbotQuestionDuplicateChecker {
                 ?.let { previous ->
                     return "이전 질문과 표현만 다른 같은 질문입니다. (이전 질문: \"$previous\")"
                 }
+        }
+
+        return null
+    }
+
+    /**
+     * 차단 후보 주제([SHADOW_TOPICS])의 중복만 탐지한다. 재생성 트리거로 쓰지 않는다.
+     *
+     * [findDuplicate]가 이미 걸러낸 질문은 재생성되므로 여기까지 오지 않는다.
+     * 따라서 이 함수가 돌려주는 사유는 "지금은 통과시키지만 규칙을 확대하면 막힐 질문"을 뜻한다.
+     * 운영 로그에 쌓인 탐지 건을 사람이 확인해 오탐이 충분히 적으면 [SINGLE_USE_TOPICS]로 옮긴다.
+     *
+     * @param question 검증을 통과한 질문
+     * @param previousQuestions 이미 사용자에게 나간 질문 목록
+     * @return 탐지 사유, 탐지되지 않으면 null
+     */
+    fun findShadowDuplicate(question: String, previousQuestions: List<String>): String? {
+        if (previousQuestions.isEmpty()) return null
+
+        SHADOW_TOPICS.forEach { (topicName, pattern) ->
+            if (pattern.containsMatchIn(question)) {
+                previousQuestions.find { pattern.containsMatchIn(it) }?.let { previous ->
+                    return "'$topicName'을(를) 이미 물었습니다. (이전 질문: \"$previous\")"
+                }
+            }
         }
 
         return null
