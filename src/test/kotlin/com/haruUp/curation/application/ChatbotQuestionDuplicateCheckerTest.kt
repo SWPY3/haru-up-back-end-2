@@ -113,4 +113,77 @@ class ChatbotQuestionDuplicateCheckerTest {
 
         assertNull(violation, "현재 점수와 목표 점수는 다른 정보다")
     }
+
+    /* ============ 차단 후보 주제 (탐지만 하고 차단하지 않는 단계) ============ */
+
+    @Test
+    @DisplayName("명사만 바꿔 우선순위를 다시 묻는 질문을 후보로 탐지한다")
+    fun `우선순위 반복 탐지`() {
+        // 검증(curationEval) 영어 회화 #4에서 실제로 관측된 중복 사례
+        val previous = listOf("해외여행 영어로 가장 먼저 하고 싶은 대화는 무엇인가요?")
+
+        val detected = ChatbotQuestionDuplicateChecker.findShadowDuplicate(
+            "체크인 대화에서 먼저 익히고 싶은 표현은 무엇인가요?",
+            previous
+        )
+
+        assertNotNull(detected)
+    }
+
+    @Test
+    @DisplayName("표현을 바꿔 현재 수준을 다시 묻는 질문을 후보로 탐지한다")
+    fun `현재 수준 반복 탐지`() {
+        // 검증(curationEval) 영어 회화 #2에서 실제로 관측된 중복 사례.
+        // 어휘가 거의 겹치지 않아 기존 유사도 검사(0.6)로는 잡히지 않는다.
+        val previous = listOf("지금 영어 회화 수준은 어느 정도인가요?")
+        val question = "지금 공항 영어 말하기는 어느 수준인가요?"
+
+        assertNotNull(ChatbotQuestionDuplicateChecker.findShadowDuplicate(question, previous))
+        assertNull(
+            ChatbotQuestionDuplicateChecker.findDuplicate(question, previous),
+            "후보 단계에서는 재생성을 유발하면 안 된다"
+        )
+    }
+
+    @Test
+    @DisplayName("후보로 탐지된 질문이라도 차단하지 않는다")
+    fun `후보 탐지는 차단으로 이어지지 않는다`() {
+        val previous = listOf("해외여행 영어로 가장 먼저 하고 싶은 대화는 무엇인가요?")
+        val question = "체크인 대화에서 먼저 익히고 싶은 표현은 무엇인가요?"
+
+        assertNotNull(
+            ChatbotQuestionDuplicateChecker.findShadowDuplicate(question, previous),
+            "후보 규칙에는 걸려야 한다"
+        )
+        assertNull(
+            ChatbotQuestionDuplicateChecker.findDuplicate(question, previous),
+            "후보 단계에서는 재생성을 유발하면 안 된다"
+        )
+    }
+
+    @Test
+    @DisplayName("축이 다른데 어미만 같은 질문도 후보로 탐지된다 - 차단 전환 전 확인해야 할 오탐 사례")
+    fun `후보 규칙의 알려진 오탐`() {
+        // '원금'과 '실력'은 서로 다른 축이지만 "어느 정도인가요"가 겹쳐 함께 탐지된다.
+        // 이 유형이 로그에서 얼마나 나오는지가 차단 전환 여부를 가른다.
+        val previous = listOf("현재 주식 투자 실력은 어느 정도인가요?")
+        val question = "현재 투자 원금이 어느 정도인가요?"
+
+        assertNotNull(ChatbotQuestionDuplicateChecker.findShadowDuplicate(question, previous))
+        assertNull(
+            ChatbotQuestionDuplicateChecker.findDuplicate(question, previous),
+            "오탐 가능성이 있는 규칙이므로 아직 차단하지 않는다"
+        )
+    }
+
+    @Test
+    @DisplayName("이전 질문이 없으면 후보로도 탐지하지 않는다")
+    fun `후보 탐지 - 이전 질문 없음`() {
+        val detected = ChatbotQuestionDuplicateChecker.findShadowDuplicate(
+            "가장 먼저 익히고 싶은 표현은 무엇인가요?",
+            emptyList()
+        )
+
+        assertNull(detected)
+    }
 }
