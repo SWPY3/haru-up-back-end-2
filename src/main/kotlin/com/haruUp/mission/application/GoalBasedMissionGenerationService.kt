@@ -131,13 +131,16 @@ class GoalBasedMissionGenerationService(
                 val missions = parseMissions(rawResponse)
 
                 if (validateDifficultyDistribution(missions)) {
+                    val shortContents = missions.filter { it.content.length < MIN_CONTENT_LENGTH }
+                    val longContents = missions.filter { it.content.length > MAX_CONTENT_LENGTH }
                     val shortDescriptions = missions.filter { it.description.length < MIN_DESCRIPTION_LENGTH }
                     val longDescriptions = missions.filter { it.description.length > MAX_DESCRIPTION_LENGTH }
                     val grammarViolations = findGrammarViolations(missions)
                     // 프롬프트로 "반복 금지"를 지시해도 모델이 같은 미션을 다시 내는 경우가 있어 코드로도 막는다
                     val duplicated = missions.filter { it.content in pastMissionSet }
 
-                    if (shortDescriptions.isEmpty() && longDescriptions.isEmpty() &&
+                    if (shortContents.isEmpty() && longContents.isEmpty() &&
+                        shortDescriptions.isEmpty() && longDescriptions.isEmpty() &&
                         grammarViolations.isEmpty() && duplicated.isEmpty()
                     ) {
                         if (attempt > 0) {
@@ -160,6 +163,12 @@ class GoalBasedMissionGenerationService(
                             " - memberId: $memberId"
                         )
                     }
+                    logLengthViolations(
+                        memberId, attempt, "content", "${MIN_CONTENT_LENGTH}자 미만", shortContents
+                    ) { it.content }
+                    logLengthViolations(
+                        memberId, attempt, "content", "${MAX_CONTENT_LENGTH}자 초과", longContents
+                    ) { it.content }
                     logLengthViolations(
                         memberId, attempt, "description", "${MIN_DESCRIPTION_LENGTH}자 미만", shortDescriptions
                     ) { it.description }
@@ -241,12 +250,16 @@ class GoalBasedMissionGenerationService(
     }
 
     /**
-     * description 글자수 기준을 벗어나거나 이미 제공한 미션과 중복되는 건수를 셉니다.
+     * content·description 글자수 기준을 벗어나거나 이미 제공한 미션과 중복되는 건수를 셉니다.
      * 재시도가 모두 실패했을 때 가장 덜 어긋난 결과를 고르는 데 사용합니다.
+     *
+     * 한 미션이 여러 기준을 동시에 어겨도 1건으로 센다. 결과끼리 위반 정도를 비교하는 용도라
+     * 어긋난 미션이 몇 개인지가 기준이다.
      */
     private fun countViolations(missions: List<ParsedMission>, pastMissionSet: Set<String>): Int {
         return missions.count {
-            it.description.length !in MIN_DESCRIPTION_LENGTH..MAX_DESCRIPTION_LENGTH ||
+            it.content.length !in MIN_CONTENT_LENGTH..MAX_CONTENT_LENGTH ||
+                it.description.length !in MIN_DESCRIPTION_LENGTH..MAX_DESCRIPTION_LENGTH ||
                 it.content in pastMissionSet
         }
     }
@@ -315,6 +328,14 @@ class GoalBasedMissionGenerationService(
 
         /** 난이도(하/중/상)별로 생성할 미션 수. 프롬프트(DailyMissionFromGoalPrompt)의 개수와 반드시 일치해야 한다. */
         const val MISSIONS_PER_DIFFICULTY = 5
+
+        /**
+         * content(미션 제목) 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다.
+         *
+         * 제목은 목록 화면에서 한 줄로 보여주므로 너무 길면 잘리고, 너무 짧으면 무엇을 할지 알 수 없다.
+         */
+        private const val MIN_CONTENT_LENGTH = 10
+        private const val MAX_CONTENT_LENGTH = 25
 
         /** description 최소 글자수. 프롬프트(DailyMissionFromGoalPrompt)의 기준과 반드시 일치해야 한다. */
         private const val MIN_DESCRIPTION_LENGTH = 20
