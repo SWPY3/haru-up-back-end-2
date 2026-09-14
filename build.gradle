@@ -137,8 +137,43 @@ springBoot {
 
 tasks.named('test') {
     // 실제 OpenAI API를 호출하는 큐레이션 평가는 일반 테스트에서 제외한다. (curationEval 태스크로 실행)
+    // integration 태그는 여기서 제외하지 않는다. 로컬에서는 docker compose 로 DB·Redis 를 띄우고
+    // 통합 테스트까지 함께 돌리는 것이 기본이기 때문이다. 인프라 없이 돌리려면 unitTest 를 쓴다.
     useJUnitPlatform {
         excludeTags 'curation-eval', 'schema-gen', 'flyway-verify'
+    }
+}
+
+// 외부 인프라 없이 돌아가는 단위 테스트만 실행 (CI 에서 사용)
+//   ./gradlew unitTest
+// DB·Redis·시크릿이 필요한 테스트는 @Tag("integration") 으로 표시해 제외한다.
+// 통합 테스트를 CI 에서 돌리려면 서비스 컨테이너와 시크릿을 붙인 뒤 별도 태스크를 추가한다.
+tasks.register('unitTest', Test) {
+    group = 'verification'
+    description = '외부 인프라가 필요 없는 단위 테스트만 실행한다'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        excludeTags 'integration', 'curation-eval', 'schema-gen', 'flyway-verify'
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+    }
+
+    // 실행된 테스트 수를 항상 남긴다.
+    // 태그 제외를 잘못 걸어 0개를 실행해도 BUILD SUCCESSFUL 이 되므로,
+    // "초록불인데 아무것도 검증하지 않는" 상태를 로그에서 바로 알아볼 수 있어야 한다.
+    afterSuite { desc, result ->
+        if (!desc.parent) {
+            println "unitTest 결과: ${result.testCount}개 실행, " +
+                    "성공 ${result.successfulTestCount}, 실패 ${result.failedTestCount}, 건너뜀 ${result.skippedTestCount}"
+            if (result.testCount == 0) {
+                throw new GradleException('unitTest 가 테스트를 하나도 실행하지 않았다. 태그 제외 설정을 확인하라.')
+            }
+        }
     }
 }
 
