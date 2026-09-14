@@ -9,6 +9,7 @@ import com.haruUp.global.security.MemberPrincipal
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
@@ -23,6 +24,8 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 
+// DB·Redis 등 외부 인프라가 필요하다. CI의 unitTest 태스크에서는 제외된다.
+@Tag("integration")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional

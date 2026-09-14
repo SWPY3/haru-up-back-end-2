@@ -7,6 +7,7 @@ import com.haruUp.notification.domain.PushPlatform
 import com.haruUp.notification.infrastructure.NotificationDeviceTokenRepository
 import com.haruUp.notification.infrastructure.PushClientApplication
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.mock.mockito.MockBean
@@ -17,6 +18,8 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
+// DB·Redis 등 외부 인프라가 필요하다. CI의 unitTest 태스크에서는 제외된다.
+@Tag("integration")
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
