@@ -9,12 +9,15 @@ import com.haruUp.member.infrastructure.MemberSettingRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.annotation.Transactional
 
+// DB·Redis 등 외부 인프라가 필요하다. CI의 unitTest 태스크에서는 제외된다.
+@Tag("integration")
 @SpringBootTest
 @Transactional               // 각 테스트마다 롤백
 class MemberAuthUseCaseIntegrationTest
