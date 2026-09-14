@@ -162,6 +162,19 @@ tasks.register('unitTest', Test) {
         events 'failed'
         exceptionFormat = 'full'
     }
+
+    // 실행된 테스트 수를 항상 남긴다.
+    // 태그 제외를 잘못 걸어 0개를 실행해도 BUILD SUCCESSFUL 이 되므로,
+    // "초록불인데 아무것도 검증하지 않는" 상태를 로그에서 바로 알아볼 수 있어야 한다.
+    afterSuite { desc, result ->
+        if (!desc.parent) {
+            println "unitTest 결과: ${result.testCount}개 실행, " +
+                    "성공 ${result.successfulTestCount}, 실패 ${result.failedTestCount}, 건너뜀 ${result.skippedTestCount}"
+            if (result.testCount == 0) {
+                throw new GradleException('unitTest 가 테스트를 하나도 실행하지 않았다. 태그 제외 설정을 확인하라.')
+            }
+        }
+    }
 }
 
 // Flyway 마이그레이션을 실제 로컬 PostgreSQL 에 적용해 검증
