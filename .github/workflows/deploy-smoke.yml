@@ -1,0 +1,51 @@
+name: 배포 스모크 체크
+
+# Railway 는 main 배포가 끝나면 GitHub 에 deployment_status 를 남긴다.
+# 그 이벤트를 받아 배포된 앱이 실제로 응답하는지 확인한다.
+#
+# 지금까지는 기동 실패(마이그레이션 오류, DB·Redis 접속 실패 등)를 사람이 발견해야 했다.
+on: deployment_status
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: 헬스체크
+    runs-on: ubuntu-latest
+    # deployment_status 는 in_progress·inactive 등으로도 발생한다. 배포 성공만 확인한다.
+    if: github.event.deployment_status.state == 'success'
+
+    steps:
+      - name: 배포 주소 확인
+        # 앱 주소는 레포에 없다. 레포지토리 변수 PRODUCTION_URL 로 주입한다.
+        #   gh variable set PRODUCTION_URL --body "https://<배포주소>"
+        run: |
+          if [ -z "${{ vars.PRODUCTION_URL }}" ]; then
+            echo "::error::PRODUCTION_URL 레포지토리 변수가 설정되어 있지 않다."
+            exit 1
+          fi
+          echo "대상: ${{ vars.PRODUCTION_URL }} (커밋 ${{ github.event.deployment.sha }})"
+
+      - name: 헬스체크
+        # Railway 가 success 를 남긴 뒤에도 앱 기동에는 시간이 더 걸린다. 최대 5분 재시도한다.
+        # /actuator/health 는 DB·Redis 상태까지 집계한 결과를 돌려준다.
+        run: |
+          url="${{ vars.PRODUCTION_URL }}/actuator/health"
+
+          for i in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/health-body -w '%{http_code}' --max-time 10 "$url" || echo "000")
+            status=$(jq -r '.status // "?"' /tmp/health-body 2>/dev/null || echo "?")
+            echo "[$i/30] HTTP $code / status=$status"
+
+            if [ "$code" = "200" ] && [ "$status" = "UP" ]; then
+              echo "배포된 앱이 정상 응답한다."
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::5분 동안 UP 응답을 받지 못했다. 마지막 응답:"
+          cat /tmp/health-body || true
+          exit 1
