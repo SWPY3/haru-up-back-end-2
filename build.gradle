@@ -177,6 +177,39 @@ tasks.register('unitTest', Test) {
     }
 }
 
+// DB·Redis 가 필요한 통합 테스트만 실행
+//   docker compose up -d postgres redis  &&  ./gradlew integrationTest
+// CI 에서는 서비스 컨테이너와 테스트용 env.properties 를 붙여 실행한다.
+tasks.register('integrationTest', Test) {
+    group = 'verification'
+    description = '외부 인프라(DB·Redis)가 필요한 통합 테스트만 실행한다'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+
+    // 스키마·데이터 상태에 따라 결과가 달라지므로 캐시된 결과를 재사용하지 않는다.
+    outputs.upToDateWhen { false }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+    }
+
+    // unitTest 와 같은 이유로 0개 실행을 실패로 본다.
+    afterSuite { desc, result ->
+        if (!desc.parent) {
+            println "integrationTest 결과: ${result.testCount}개 실행, " +
+                    "성공 ${result.successfulTestCount}, 실패 ${result.failedTestCount}, 건너뜀 ${result.skippedTestCount}"
+            if (result.testCount == 0) {
+                throw new GradleException('integrationTest 가 테스트를 하나도 실행하지 않았다. 태그 설정을 확인하라.')
+            }
+        }
+    }
+}
+
 // Flyway 마이그레이션을 실제 로컬 PostgreSQL 에 적용해 검증
 //   docker compose up -d postgres  &&  ./gradlew flywayVerify
 tasks.register('flywayVerify', Test) {
