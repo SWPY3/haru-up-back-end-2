@@ -185,6 +185,7 @@ jobs:
       - name: 테스트용 Firebase 자격증명 생성
         # FirebaseConfig 가 기동 시 자격증명을 파싱한다. 푸시 발송은 테스트에서 mock 하므로
         # 실제 키는 필요 없고 파싱만 통과하면 된다. 일회용 RSA 키로 형식을 맞춘다.
+        # 환경변수가 아니라 클래스패스 파일로 넘긴다. 환경변수는 스텝 로그에 그대로 찍힌다.
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/ci-key.pem"
           jq -n --arg key "$(cat "$RUNNER_TEMP/ci-key.pem")" '{
@@ -196,12 +197,7 @@ jobs:
             client_id: "000000000000000000000",
             auth_uri: "https://accounts.google.com/o/oauth2/auth",
             token_uri: "https://oauth2.googleapis.com/token"
-          }' > "$RUNNER_TEMP/ci-service-account.json"
-          {
-            echo 'FIREBASE_SERVICE_ACCOUNT_JSON<<JSON_EOF'
-            cat "$RUNNER_TEMP/ci-service-account.json"
-            echo 'JSON_EOF'
-          } >> "$GITHUB_ENV"
+          }' > src/main/resources/firebase-service-account.json
 
       - name: 통합 테스트
         run: ./gradlew integrationTest

@@ -43,5 +43,6 @@ out/
 ### env ###
 .env
 env.properties
+firebase-service-account.json
 
 
