@@ -25,14 +25,20 @@ import java.util.Properties
 @Tag("flyway-verify")
 class FlywayMigrationTest {
 
+    // env.properties 는 gitignore 대상이라 CI 에는 파일이 없다. 그때는 환경변수에서 읽는다.
     private val env = Properties().apply {
-        FlywayMigrationTest::class.java.classLoader.getResourceAsStream("env.properties")!!.use { load(it) }
+        FlywayMigrationTest::class.java.classLoader.getResourceAsStream("env.properties")?.use { load(it) }
     }
 
-    private val url = "jdbc:postgresql://${env.getProperty("POSTGRES_HOST")}:" +
-        "${env.getProperty("POSTGRES_PORT")}/${env.getProperty("POSTGRES_DB")}"
-    private val user = env.getProperty("POSTGRES_USER")
-    private val password = env.getProperty("POSTGRES_PASSWORD")
+    private fun setting(key: String): String =
+        env.getProperty(key)
+            ?: System.getenv(key)
+            ?: error("$key 가 env.properties 에도 환경변수에도 없다")
+
+    private val url = "jdbc:postgresql://${setting("POSTGRES_HOST")}:" +
+        "${setting("POSTGRES_PORT")}/${setting("POSTGRES_DB")}"
+    private val user = setting("POSTGRES_USER")
+    private val password = setting("POSTGRES_PASSWORD")
 
     private fun flywayFor(schema: String): Flyway =
         Flyway.configure()
