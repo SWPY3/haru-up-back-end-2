@@ -98,7 +98,9 @@ management:
         include: "health,info,prometheus"  # 혹은 "*"
   endpoint:
     health:
-      show-details: "always"
+      # 배포 후 스모크 체크가 인증 없이 호출한다. 인증되지 않은 호출에는 status 만 내려
+      # DB 종류·버전 같은 내부 정보가 공개되지 않게 한다. 집계된 status 는 그대로다.
+      show-details: "when-authorized"
   metrics:
     tags:
       application: my-spring-app   # 공통 태그

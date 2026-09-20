@@ -100,6 +100,8 @@ class SecurityConfig(
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/actuator/prometheus/**",
+                        // 배포 후 스모크 체크가 호출한다. 상세는 show-details: when-authorized 로 가려진다.
+                        "/actuator/health",
                         "/health",
 
                         // ⭐ 엑셀 다운로드 허용
