@@ -13,9 +13,10 @@ permissions:
   contents: read
 
 # 같은 PR 에 연속 푸시하면 이전 실행을 취소한다.
+# main 푸시는 취소하지 않는다. 그 커밋이 곧 배포 대상이라 검증 결과가 반드시 남아야 한다.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
