@@ -59,9 +59,11 @@ class InterestValidationIntegrationTest {
         stringRedisTemplate.delete("typo-validation:block:${testPrincipal.id}")
 
         // 기본적으로 AI는 "true" 반환하도록 설정
+        // model 과 seed 는 기본값이 null 이다. any() 는 null 을 매칭하지 않으므로
+        // anyOrNull() 을 써야 프로덕션 코드의 chatCompletion(messages = ...) 호출에 스텁이 붙는다.
         given(openAiApiClient.chatCompletion(
             messages = any(),
-            model = any(),
+            model = anyOrNull(),
             maxTokens = any(),
             temperature = any(),
             topK = any(),
@@ -155,9 +157,11 @@ class InterestValidationIntegrationTest {
     fun `관심사 검증 - AI 판단으로 실패`() {
 
         // AI 응답을 false로 변경
+        // model 과 seed 는 기본값이 null 이다. any() 는 null 을 매칭하지 않으므로
+        // anyOrNull() 을 써야 프로덕션 코드의 chatCompletion(messages = ...) 호출에 스텁이 붙는다.
         given(openAiApiClient.chatCompletion(
             messages = any(),
-            model = any(),
+            model = anyOrNull(),
             maxTokens = any(),
             temperature = any(),
             topK = any(),
