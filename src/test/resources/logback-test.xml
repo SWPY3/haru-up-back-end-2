@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  테스트 전용 로깅 설정.
+
+  logback-spring.xml 은 prod 가 아닌 모든 프로파일에서 로그를 Loki 로 보낸다.
+  테스트 환경에는 Loki 가 없어 연결 실패 스택트레이스가 수백 줄씩 쌓이고,
+  정작 봐야 할 테스트 실패 원인이 그 안에 묻힌다. 테스트에서는 콘솔로만 남긴다.
+
+  Spring Boot 는 테스트 클래스패스에 이 파일이 있으면 logback-spring.xml 대신 이 파일을 쓴다.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
