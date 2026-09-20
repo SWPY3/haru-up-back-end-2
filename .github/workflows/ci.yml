@@ -1,8 +1,8 @@
 name: CI
 
-# PR 과 main 푸시에서 컴파일 + 단위 테스트 + 마이그레이션 검증을 확인한다.
-# DB·Redis·시크릿이 필요한 통합 테스트(@Tag("integration"))는 아직 제외한다.
-# 그 테스트들은 gitignore 된 env.properties 를 읽기 때문에 CI 에서 컨텍스트 자체가 뜨지 않는다.
+# PR 과 main 푸시에서 컴파일·단위 테스트, 마이그레이션 검증, 통합 테스트를 확인한다.
+# 실제 OpenAI API 를 호출하는 큐레이션 평가(@Tag("curation-eval"))만 CI 에서 제외한다.
+# 비용이 들고 응답이 매번 달라 게이트로 쓸 수 없기 때문이다. 필요할 때 로컬에서 돌린다.
 on:
   pull_request:
   push:
@@ -105,4 +105,107 @@ jobs:
         with:
           name: migration-report
           path: build/reports/tests/flywayVerify/
+          retention-days: 7
+
+  integration:
+    name: 통합 테스트
+    runs-on: ubuntu-latest
+
+    # DB·Redis 를 실제로 붙여야 도는 테스트들이다. 지금까지 머지 전에 한 번도 돌지 않았다.
+    # 실제 시크릿은 필요 없다. 외부 호출은 모두 테스트에서 mock 하고,
+    # 접속 정보와 자격증명 형식만 맞춰주면 컨텍스트가 뜬다.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: haruup
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d haruup"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 21 설치
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Gradle 설정
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: pgvector 확장 활성화
+        # 스키마에 vector 컬럼이 있어 Flyway 가 V1 을 적용하려면 확장이 먼저 있어야 한다.
+        run: psql -h localhost -U postgres -d haruup -c 'CREATE EXTENSION IF NOT EXISTS vector'
+        env:
+          PGPASSWORD: postgres
+
+      - name: 테스트용 env.properties 생성
+        # 로컬과 같은 경로로 설정을 읽게 한다 (application-test.yml 이 이 파일을 import 한다).
+        # 값은 전부 서비스 컨테이너 접속 정보이거나 형식만 맞춘 더미다. 실제 시크릿이 아니다.
+        run: |
+          cat > src/main/resources/env.properties <<'PROPS'
+          APPS_ENV=test
+          SERVER_PORT=8080
+
+          JWT_SECRET_KEY=ci-only-dummy-hs256-secret-key-at-least-32-bytes-long-000000000000
+          JWT_ISSUER=haruup-ci
+
+          POSTGRES_HOST=localhost
+          POSTGRES_PORT=5432
+          POSTGRES_DB=haruup
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=postgres
+
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          REDIS_PASSWORD=
+
+          LOKI_HOST=localhost
+          OPENAI_API_KEY=ci-only-dummy-key-openai-calls-are-mocked
+          PROPS
+
+      - name: 테스트용 Firebase 자격증명 생성
+        # FirebaseConfig 가 기동 시 자격증명을 파싱한다. 푸시 발송은 테스트에서 mock 하므로
+        # 실제 키는 필요 없고 파싱만 통과하면 된다. 일회용 RSA 키로 형식을 맞춘다.
+        # 환경변수가 아니라 클래스패스 파일로 넘긴다. 환경변수는 스텝 로그에 그대로 찍힌다.
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/ci-key.pem"
+          jq -n --arg key "$(cat "$RUNNER_TEMP/ci-key.pem")" '{
+            type: "service_account",
+            project_id: "haruup-ci",
+            private_key_id: "ci-only",
+            private_key: $key,
+            client_email: "ci@haruup-ci.iam.gserviceaccount.com",
+            client_id: "000000000000000000000",
+            auth_uri: "https://accounts.google.com/o/oauth2/auth",
+            token_uri: "https://oauth2.googleapis.com/token"
+          }' > src/main/resources/firebase-service-account.json
+
+      - name: 통합 테스트
+        run: ./gradlew integrationTest
+
+      - name: 테스트 리포트 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-report
+          path: build/reports/tests/integrationTest/
           retention-days: 7
