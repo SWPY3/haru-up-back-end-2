@@ -3,6 +3,8 @@ package com.haruUp.mission.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.category.repository.JobDetailRepository
 import com.haruUp.category.repository.JobJpaRepository
+import com.haruUp.global.openai.OpenAiUsageContext
+import com.haruUp.global.openai.OpenAiUsageTracking
 import com.haruUp.global.prompt.MissionMemberProfile
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.interest.repository.InterestEmbeddingJpaRepository
@@ -311,7 +313,12 @@ class MissionRecommendService(
      * - 활성 목표 조회 → 오늘 미션 삭제 후 재생성(하5/중5/상5)
      * - reset_mission_count(관심사) 대신 Redis 재추천 횟수만 증가
      */
-    fun retryWithGoal(memberId: Long): MissionRecommendationResponse {
+    fun retryWithGoal(memberId: Long): MissionRecommendationResponse =
+        OpenAiUsageTracking.withContext(OpenAiUsageContext(feature = "mission_retry")) {
+            retryWithGoalInScope(memberId)
+        }
+
+    private fun retryWithGoalInScope(memberId: Long): MissionRecommendationResponse {
         if (getRetryCount(memberId) >= 5) {
             throw IllegalArgumentException("재추천 횟수 초과: 최대 5회까지 가능합니다.")
         }

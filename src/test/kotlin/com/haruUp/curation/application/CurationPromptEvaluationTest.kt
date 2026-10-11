@@ -3,6 +3,8 @@ package com.haruUp.curation.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.global.openai.ChatMessage
 import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.openai.OpenAiUsageContext
+import com.haruUp.global.openai.OpenAiUsageTracking
 import com.haruUp.global.prompt.ChatbotQuestionPrompt
 import com.haruUp.global.prompt.ChatbotSummaryPrompt
 import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
@@ -185,7 +187,8 @@ class CurationPromptEvaluationTest {
 
     /* ===================== 실행 ===================== */
 
-    private fun runSession(client: OpenAiApiClient, persona: Persona, round: Int): SessionResult {
+    private fun runSession(client: OpenAiApiClient, persona: Persona, round: Int): SessionResult =
+        OpenAiUsageTracking.withContext(OpenAiUsageContext(sessionId = "eval-${java.util.UUID.randomUUID()}")) {
         val startedAt = System.currentTimeMillis()
         var apiCalls = 0
 
@@ -202,6 +205,7 @@ class CurationPromptEvaluationTest {
                 canFinish = false
             )
 
+            val questionUsage = OpenAiUsageContext("curation_question", OpenAiUsageTracking.current()?.sessionId)
             var retryHint = ""
             var attempts = 0
             val rejected = mutableListOf<String>()
@@ -211,12 +215,14 @@ class CurationPromptEvaluationTest {
 
             while (attempts < maxQuestionRetry) {
                 attempts++
-                val raw = client.generateText(
-                    userMessage = baseUserMessage + retryHint,
-                    systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
-                    model = OpenAiApiClient.MODEL_DEFAULT,
-                    temperature = 0.7
-                ).trim()
+                val raw = OpenAiUsageTracking.withContext(questionUsage.copy(attempt = attempts)) {
+                    client.generateText(
+                        userMessage = baseUserMessage + retryHint,
+                        systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
+                        model = OpenAiApiClient.MODEL_DEFAULT,
+                        temperature = 0.7
+                    ).trim()
+                }
                 apiCalls++
 
                 val parsed = ChatbotQuestionValidator.parse(raw)
@@ -287,7 +293,8 @@ class CurationPromptEvaluationTest {
      * 페르소나가 실제 사용자처럼 답하도록 시뮬레이션한다.
      * 답변 길이를 측정하는 것이 목적이므로 길이 제한을 의도적으로 주지 않는다.
      */
-    private fun simulateAnswer(client: OpenAiApiClient, persona: Persona, question: String): String {
+    private fun simulateAnswer(client: OpenAiApiClient, persona: Persona, question: String): String =
+        OpenAiUsageTracking.operation("evaluation_simulated_user") {
         val systemPrompt = """
 당신은 목표 달성 앱을 쓰는 아래 인물입니다. 코치의 질문에 실제 사람처럼 답하세요.
 
@@ -309,7 +316,8 @@ ${persona.profile}
     }
 
     /** 운영 코드(CurationChatbotUseCase#generateConversationSummary)와 동일한 경로로 요약한다. */
-    private fun generateSummary(client: OpenAiApiClient, goalText: String, history: List<String>): String {
+    private fun generateSummary(client: OpenAiApiClient, goalText: String, history: List<String>): String =
+        OpenAiUsageTracking.operation("curation_summary") {
         val messages = listOf(
             ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
             ChatMessage(
@@ -342,7 +350,9 @@ ${persona.profile}
         persona: Persona,
         conversationRaw: String,
         pastMissions: List<String> = emptyList()
-    ): MissionGenerationResult {
+    ): MissionGenerationResult = OpenAiUsageTracking.operation(
+        if (pastMissions.isEmpty()) "mission_initial" else "mission_retry"
+    ) {
         val userMessage = DailyMissionFromGoalPrompt.buildUserMessage(
             goalText = persona.goalText,
             conversationContext = conversationRaw,
@@ -357,13 +367,15 @@ ${persona.profile}
 
         repeat(maxMissionRetry) {
             attempts++
-            val raw = client.generateText(
-                userMessage = userMessage,
-                systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
-                model = OpenAiApiClient.MODEL_DEFAULT,
-                temperature = 0.5,
-                maxTokens = 4096
-            ).trim()
+            val raw = OpenAiUsageTracking.attempt(attempts) {
+                client.generateText(
+                    userMessage = userMessage,
+                    systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
+                    model = OpenAiApiClient.MODEL_DEFAULT,
+                    temperature = 0.5,
+                    maxTokens = 4096
+                ).trim()
+            }
 
             val missions = parseMissions(raw)
             if (missions.isEmpty()) {
@@ -690,7 +702,7 @@ ${persona.profile}
             .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
             .build()
 
-        return OpenAiApiClient(openAiRestClient = restClient, defaultModel = model)
+        return OpenAiApiClient(openAiRestClient = restClient, defaultModel = model, usageEnvironment = "evaluation")
     }
 
     private fun loadKeyFromEnvProperties(): String? {
