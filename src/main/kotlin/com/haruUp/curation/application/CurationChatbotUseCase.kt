@@ -13,6 +13,8 @@ import com.haruUp.curation.dto.ChatbotQuestionType
 import com.haruUp.curation.dto.ChatbotStartResponse
 import com.haruUp.global.openai.ChatMessage
 import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.openai.OpenAiUsageContext
+import com.haruUp.global.openai.OpenAiUsageTracking
 import com.haruUp.global.prompt.ChatbotQuestionPrompt
 import com.haruUp.global.prompt.ChatbotSummaryPrompt
 import com.haruUp.global.prompt.GoalValidationPrompt
@@ -154,7 +156,12 @@ class CurationChatbotUseCase(
      * 사용자가 계속을 선택해도 [MAX_FOLLOW_UP_QUESTIONS]개에서 강제로 마무리한다.
      */
     @Transactional
-    fun answer(request: ChatbotAnswerRequest): Any {
+    fun answer(request: ChatbotAnswerRequest): Any =
+        OpenAiUsageTracking.withContext(OpenAiUsageContext(sessionId = request.sessionId)) {
+            answerInSession(request)
+        }
+
+    private fun answerInSession(request: ChatbotAnswerRequest): Any {
         val sessionKey = "$SESSION_KEY_PREFIX${request.sessionId}"
         val sessionJson = redisTemplate.opsForValue().get(sessionKey) as? String
             ?: throw IllegalArgumentException("세션을 찾을 수 없습니다. 챗봇을 다시 시작해주세요.")
@@ -393,12 +400,16 @@ class CurationChatbotUseCase(
         memberGoalRepository.save(memberGoal)
 
         // 즉시 오늘의 미션 생성 (새 목표 시작일 = 오늘)
-        val savedMissions = goalBasedMissionGenerationService.generateAndSaveMissions(
-            memberId = session.memberId,
-            goalText = session.firstAnswer,
-            conversationRaw = conversationRaw,
-            goalStartDate = java.time.LocalDate.now()
-        )
+        val savedMissions = OpenAiUsageTracking.withContext(
+            (OpenAiUsageTracking.current() ?: OpenAiUsageContext()).copy(feature = "mission_initial")
+        ) {
+            goalBasedMissionGenerationService.generateAndSaveMissions(
+                memberId = session.memberId,
+                goalText = session.firstAnswer,
+                conversationRaw = conversationRaw,
+                goalStartDate = java.time.LocalDate.now()
+            )
+        }
 
         redisTemplate.delete(sessionKey)
 
@@ -455,7 +466,7 @@ class CurationChatbotUseCase(
         canFinish: Boolean,
         personality: CharacterPersonality?,
         firstQuestionText: String
-    ): ChatbotQuestionValidator.ParsedQuestion {
+    ): ChatbotQuestionValidator.ParsedQuestion = OpenAiUsageTracking.operation("curation_question") {
         // history 구조: [A1, Q2, A2, Q3, ...] - 홀수 인덱스(1,3,5...)가 AI 질문
         // Q1(고정 첫 질문) + 이미 생성된 AI 질문들을 중복 방지 목록으로 전달
         val previousQuestions = buildList {
@@ -472,45 +483,62 @@ class CurationChatbotUseCase(
         var retryHint = ""
 
         repeat(MAX_QUESTION_RETRY) { attempt ->
-            val raw = openAiApiClient.generateText(
-                userMessage = baseUserMessage + retryHint,
-                systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
-                model = OpenAiApiClient.MODEL_DEFAULT,
-                temperature = 0.7
-            ).trim()
+            OpenAiUsageTracking.attempt(attempt + 1) {
+                val raw = openAiApiClient.generateText(
+                    userMessage = baseUserMessage + retryHint,
+                    systemMessage = ChatbotQuestionPrompt.SYSTEM_PROMPT,
+                    model = OpenAiApiClient.MODEL_DEFAULT,
+                    temperature = 0.7
+                ).trim()
 
-            val parsed = ChatbotQuestionValidator.parse(raw)
-            if (parsed.sufficient) {
-                return parsed
-            }
-            if (parsed.question.isBlank()) {
-                logger.warn("꼬리질문 생성 결과가 비어 있음 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) - 원문: \"$raw\"")
-                return@repeat
-            }
-
-            val violation = ChatbotQuestionValidator.findViolation(parsed, previousQuestions)
-            // 여러 질문이 붙어 나온 경우를 대비해 항상 첫 번째 질문까지만 사용
-            val result = parsed.copy(question = ChatbotQuestionValidator.takeFirstQuestion(parsed.question))
-
-            if (violation == null) {
-                logShadowDuplicate(result.question, previousQuestions)
-                if (attempt > 0) {
-                    logger.info("꼬리질문 검증 통과 (${attempt + 1}번째 시도) - 질문: \"${result.question}\"")
+                val parsed = ChatbotQuestionValidator.parse(raw)
+                if (parsed.sufficient) {
+                    OpenAiUsageTracking.validation("passed")
+                    return parsed
                 }
-                return result
-            }
+                if (parsed.question.isBlank()) {
+                    OpenAiUsageTracking.validation("rejected", listOf("empty_question"))
+                    logger.warn("꼬리질문 생성 결과가 비어 있음 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) - 원문: \"$raw\"")
+                    return@repeat
+                }
 
-            fallback = result
-            retryHint = ChatbotQuestionPrompt.buildRetryHint(raw, violation)
-            logger.warn(
-                "꼬리질문 검증 실패 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) " +
-                "- 사유: $violation, 질문: \"${parsed.question}\", 예시: ${parsed.examples}"
-            )
+                val violation = ChatbotQuestionValidator.findViolation(parsed, previousQuestions)
+                // 여러 질문이 붙어 나온 경우를 대비해 항상 첫 번째 질문까지만 사용
+                val result = parsed.copy(question = ChatbotQuestionValidator.takeFirstQuestion(parsed.question))
+
+                if (violation == null) {
+                    OpenAiUsageTracking.validation("passed")
+                    logShadowDuplicate(result.question, previousQuestions)
+                    if (attempt > 0) {
+                        logger.info("꼬리질문 검증 통과 (${attempt + 1}번째 시도) - 질문: \"${result.question}\"")
+                    }
+                    return result
+                }
+
+                OpenAiUsageTracking.validation("rejected", listOf(questionViolationCode(violation)))
+                fallback = result
+                retryHint = ChatbotQuestionPrompt.buildRetryHint(raw, violation)
+                logger.warn(
+                    "꼬리질문 검증 실패 (시도 ${attempt + 1}/$MAX_QUESTION_RETRY) " +
+                    "- 사유: $violation, 질문: \"${parsed.question}\", 예시: ${parsed.examples}"
+                )
+            }
         }
 
+        OpenAiUsageTracking.validation(if (fallback == null) "failed" else "fallback")
         return fallback?.also {
             logger.warn("${MAX_QUESTION_RETRY}회 시도 후에도 검증을 통과하지 못해 마지막 질문을 사용합니다 - 질문: \"${it.question}\"")
         } ?: throw IllegalStateException("${MAX_QUESTION_RETRY}회 시도 후에도 꼬리질문 생성에 실패했습니다.")
+    }
+
+    private fun questionViolationCode(reason: String): String = when {
+        reason.contains("예시") -> "example_rules"
+        reason.contains("중복") || reason.contains("이미") || reason.contains("같은") -> "duplicate_question"
+        reason.contains("시간") -> "time_question"
+        reason.contains("문법") || reason.contains("조사") || reason.contains("띄어쓰기") -> "grammar"
+        reason.contains("서술형") -> "long_answer"
+        reason.contains("깁니다") -> "question_length"
+        else -> "question_rules"
     }
 
     /**
@@ -558,7 +586,8 @@ class CurationChatbotUseCase(
      * 호출이 실패하면 사용자를 막지 않도록 통과 처리합니다.
      * (잘못된 차단은 이탈로 이어지지만, 잘못된 통과는 질문이 한 번 더 나가는 정도의 비용입니다.)
      */
-    private fun analyzeGoal(memberId: Long, goalText: String): GoalValidator.GoalAnalysis {
+    private fun analyzeGoal(memberId: Long, goalText: String): GoalValidator.GoalAnalysis =
+        OpenAiUsageTracking.operation("goal_analysis") {
         val raw = try {
             openAiApiClient.generateText(
                 userMessage = GoalValidationPrompt.buildUserMessage(goalText),
@@ -568,9 +597,11 @@ class CurationChatbotUseCase(
             ).trim()
         } catch (e: Exception) {
             logger.warn("목표 분석 호출 실패 - memberId: $memberId, 목표: \"$goalText\", 오류: ${e.message}")
+            OpenAiUsageTracking.validation("fallback", listOf("api_failure"))
             return GoalValidator.parse("")
         }
 
+        OpenAiUsageTracking.validation("parsed")
         return GoalValidator.parse(raw).also {
             logger.info(
                 "목표 분석 완료 - memberId: $memberId, 목표: \"$goalText\", " +
@@ -589,41 +620,46 @@ class CurationChatbotUseCase(
     private fun generateConversationSummary(
         goalText: String,
         history: List<String>
-    ): ConversationSummaryParser.ConversationSummaries {
+    ): ConversationSummaryParser.ConversationSummaries = OpenAiUsageTracking.operation("curation_summary") {
         val conversationText = ChatbotSummaryPrompt.buildConversationText(goalText, history)
         var fallback: ConversationSummaryParser.ConversationSummaries? = null
         var retryHint = ""
 
         repeat(MAX_SUMMARY_ATTEMPTS) { attempt ->
-            val messages = listOf(
-                ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
-                ChatMessage(role = "user", content = conversationText + retryHint)
-            )
+            OpenAiUsageTracking.attempt(attempt + 1) {
+                val messages = listOf(
+                    ChatMessage(role = "system", content = ChatbotSummaryPrompt.SYSTEM_PROMPT),
+                    ChatMessage(role = "user", content = conversationText + retryHint)
+                )
 
-            val raw = openAiApiClient.chatCompletion(
-                messages = messages,
-                model = OpenAiApiClient.MODEL_DEFAULT,
-                temperature = 0.5
-            ).result?.message?.content.orEmpty()
+                val raw = openAiApiClient.chatCompletion(
+                    messages = messages,
+                    model = OpenAiApiClient.MODEL_DEFAULT,
+                    temperature = 0.5
+                ).result?.message?.content.orEmpty()
 
-            val summaries = ConversationSummaryParser.parse(raw)
-            val violation = ConversationSummaryParser.findBriefViolation(summaries)
+                val summaries = ConversationSummaryParser.parse(raw)
+                val violation = ConversationSummaryParser.findBriefViolation(summaries)
 
-            if (violation == null) {
-                if (attempt > 0) {
-                    logger.info("요약 brief 검증 통과 (${attempt + 1}번째 시도) - brief: \"${summaries.brief}\"")
+                if (violation == null) {
+                    OpenAiUsageTracking.validation("passed")
+                    if (attempt > 0) {
+                        logger.info("요약 brief 검증 통과 (${attempt + 1}번째 시도) - brief: \"${summaries.brief}\"")
+                    }
+                    return summaries
                 }
-                return summaries
-            }
 
-            fallback = summaries
-            retryHint = ChatbotSummaryPrompt.buildRetryHint(summaries.brief, violation)
-            logger.warn(
-                "요약 brief 검증 실패 (시도 ${attempt + 1}/$MAX_SUMMARY_ATTEMPTS) " +
-                "- 사유: $violation, brief: \"${summaries.brief}\""
-            )
+                OpenAiUsageTracking.validation("rejected", listOf("brief_rules"))
+                fallback = summaries
+                retryHint = ChatbotSummaryPrompt.buildRetryHint(summaries.brief, violation)
+                logger.warn(
+                    "요약 brief 검증 실패 (시도 ${attempt + 1}/$MAX_SUMMARY_ATTEMPTS) " +
+                    "- 사유: $violation, brief: \"${summaries.brief}\""
+                )
+            }
         }
 
+        OpenAiUsageTracking.validation("fallback")
         // 요약이 길다고 큐레이션 전체를 실패시킬 수는 없으므로 마지막 결과를 그대로 사용한다.
         return fallback?.also {
             logger.warn(
