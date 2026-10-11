@@ -8,6 +8,7 @@ import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
 import com.haruUp.mission.infrastructure.MemberMissionRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -16,13 +17,15 @@ import java.time.temporal.ChronoUnit
 /**
  * 목표 기반 미션 생성 공통 서비스
  * - 챗봇 완료 시 즉시 미션 생성
- * - 매일 자정 배치에서 미션 재생성
+ * - 오늘 첫 추천 조회 시 생성 및 사용자 요청으로 재추천
  */
 @Service
 class GoalBasedMissionGenerationService(
     private val memberMissionRepository: MemberMissionRepository,
     private val openAiApiClient: OpenAiApiClient,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Value("\${openai.mission.partial-repair-enabled:true}")
+    private val partialRepairEnabled: Boolean = true
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -107,7 +110,8 @@ class GoalBasedMissionGenerationService(
         goalStartDate: LocalDate,
         pastMissions: List<String>
     ): List<ParsedMission> = OpenAiUsageTracking.operation(
-        OpenAiUsageTracking.current()?.feature?.takeIf { it.startsWith("mission_") } ?: "mission_generation"
+        OpenAiUsageTracking.current()?.feature?.takeIf { it.startsWith("mission_") } ?: "mission_generation",
+        promptVersion = if (partialRepairEnabled) PartialMissionRepair.VERSION else "baseline-v1"
     ) {
         val pastMissionSet = pastMissions.toSet()
 
@@ -118,20 +122,25 @@ class GoalBasedMissionGenerationService(
         logger.info("미션 생성 프롬프트 - memberId: $memberId, D+$dayNumber, userMessage:\n$userMessage")
 
         var lastException: Exception? = null
-        // 난이도 분포는 맞지만 description 글자수만 미달인 결과 (전부 실패 시 fallback으로 사용)
+        var repairCandidates: List<ParsedMission>? = null
+        // 유효한 난이도 분포의 후보 중 기존 위반 점수가 가장 낮은 결과를 fallback으로 보존
         var fallbackMissions: List<ParsedMission>? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
             OpenAiUsageTracking.attempt(attempt + 1) {
+                val repairBase = repairCandidates
+                val repairIds = repairBase?.let { PartialMissionRepair.invalidIndices(it, pastMissionSet) }.orEmpty()
                 try {
                     val rawResponse = openAiApiClient.generateText(
-                        userMessage = userMessage,
-                        systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
+                        userMessage = if (repairBase == null) userMessage else
+                            PartialMissionRepair.prompt(userMessage, repairBase, repairIds, pastMissionSet),
+                        systemMessage = if (repairBase == null) DailyMissionFromGoalPrompt.SYSTEM_PROMPT else PartialMissionRepair.system,
                         model = OpenAiApiClient.MODEL_DEFAULT,
                         temperature = 0.5,
                         maxTokens = MISSION_GENERATION_MAX_TOKENS
                     ).trim()
 
-                    val missions = parseMissions(rawResponse)
+                    val missions = if (repairBase == null) parseMissions(rawResponse) else
+                        PartialMissionRepair.merge(rawResponse, repairBase, repairIds)
 
                     if (GeneratedMissionValidator.hasValidDifficultyDistribution(missions)) {
                         val result = GeneratedMissionValidator.validate(missions, pastMissionSet)
@@ -158,8 +167,12 @@ class GoalBasedMissionGenerationService(
                             if (result.grammarViolations.isNotEmpty()) add("grammar")
                             if (result.duplicated.isNotEmpty()) add("duplicate_mission")
                         })
+                        val invalidIds = PartialMissionRepair.invalidIndices(missions, pastMissionSet)
+                        // 실제 비용 평가 범위(오류 1~5개)를 넘으면 전체 생성으로 돌아간다.
+                        repairCandidates = missions.takeIf { partialRepairEnabled && invalidIds.size in 1..PartialMissionRepair.MAX_TARGETS }
                         logViolations(memberId, attempt, result)
                     } else {
+                        repairCandidates = null
                         OpenAiUsageTracking.validation("rejected", listOf("difficulty_distribution"))
                         val grouped = missions.groupBy { it.difficulty }
                         logger.warn(
@@ -170,6 +183,8 @@ class GoalBasedMissionGenerationService(
                         )
                     }
                 } catch (e: Exception) {
+                    // 잘못된 패치/JSON/API 오류는 추가 호출을 끼우지 않고 다음 남은 시도에서 전체 생성한다.
+                    repairCandidates = null
                     OpenAiUsageTracking.validation("rejected", listOf(
                         if (e is IllegalArgumentException) "parse_error" else "api_or_generation_error"
                     ))
