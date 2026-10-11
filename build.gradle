@@ -279,10 +279,10 @@ tasks.register('curationEval', Test) {
     }
 }
 
-// 미션 실패 사유 전달 비교: 가상 목표 3개 × 기존/변경, 최대 18 API 호출. DB 사용 없음.
+// 미션 재시도 평가: natural 최대 18회 / controlled 6회 / partial 최대 72회. DB 사용 없음.
 tasks.register('missionRetryEval', Test) {
     group = 'verification'
-    description = '기존 키로 미션 재시도 실패 사유 전달의 비용·검증 결과를 소규모 비교한다'
+    description = '기존 키로 미션 재시도 실패 사유 전달 및 부분 수정의 비용·검증 결과를 비교한다'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform { includeTags 'mission-retry-eval' }

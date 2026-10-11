@@ -1,0 +1,260 @@
+[
+  {
+    "case": "english",
+    "feedbackEnabled": true,
+    "apiCalls": 1,
+    "passed": true,
+    "costUsd": "0.0030627",
+    "missions": [
+      {
+        "content": "공항 체크인 첫문장 3회",
+        "description": "메모앱에서 공항 체크인 첫문장을 3회 소리내기",
+        "difficulty": 1
+      },
+      {
+        "content": "호텔 체크인 이름 말하기",
+        "description": "녹음기로 호텔 체크인 이름 문장을 3회 말하기",
+        "difficulty": 1
+      },
+      {
+        "content": "식당 주문 문장 3개 읽기",
+        "description": "책에서 식당 주문 문장 3개를 1번씩 읽기",
+        "difficulty": 1
+      },
+      {
+        "content": "감사 인사 5회 말하기",
+        "description": "휴대폰 녹음기로 감사 인사를 5회 말하기",
+        "difficulty": 1
+      },
+      {
+        "content": "길 묻기 표현 3개 따라말하기",
+        "description": "메모앱에서 길 묻기 표현 3개를 2회씩 말하기",
+        "difficulty": 1
+      },
+      {
+        "content": "공항 질문과 답 6회 연습",
+        "description": "책에서 공항 질문과 답 3쌍을 2회씩 말하기",
+        "difficulty": 2
+      },
+      {
+        "content": "호텔 요청 문장 4개 말하기",
+        "description": "녹음기로 호텔 요청 문장 4개를 각각 2회 말하기",
+        "difficulty": 2
+      },
+      {
+        "content": "식당 주문 전체 흐름 읽기",
+        "description": "책에서 식당 주문 대화 1개를 2회 소리내기",
+        "difficulty": 2
+      },
+      {
+        "content": "통근 중 표현 5개 복습",
+        "description": "책으로 여행 표현 5개를 각 1회씩 읽기",
+        "difficulty": 2
+      },
+      {
+        "content": "길 안내 답변 3문장 말하기",
+        "description": "메모앱에서 길 안내 답변 3문장을 3회씩 말하기",
+        "difficulty": 2
+      },
+      {
+        "content": "공항 체크인 대화 1회 녹음",
+        "description": "녹음기로 공항 체크인 대화를 1회 끝까지 말하기",
+        "difficulty": 3
+      },
+      {
+        "content": "호텔 체크인 대화 1회 녹음",
+        "description": "녹음기로 호텔 체크인 대화를 1회 끝까지 말하기",
+        "difficulty": 3
+      },
+      {
+        "content": "식당 주문 대화 1회 녹음",
+        "description": "녹음기로 식당 주문 대화를 1회 끝까지 말하기",
+        "difficulty": 3
+      },
+      {
+        "content": "여행 3상황 연속 말하기",
+        "description": "녹음기로 공항 호텔 식당 대화를 3회 연속 말하기",
+        "difficulty": 3
+      },
+      {
+        "content": "즉답 연습 10문장 말하기",
+        "description": "메모앱에서 여행 질문 10문장에 즉답을 1회씩 말하기",
+        "difficulty": 3
+      }
+    ],
+    "source": "natural pilot 20261011-172739; synthetic profile; single initial call, retry feedback never used",
+    "model": "gpt-5.4-mini-2026-03-17"
+  },
+  {
+    "case": "exercise",
+    "feedbackEnabled": true,
+    "apiCalls": 1,
+    "passed": true,
+    "costUsd": "0.00386115",
+    "missions": [
+      {
+        "content": "식사 전 접시 절반 채소 담기",
+        "description": "집 밥그릇에 채소를 1접시 먼저 담기",
+        "difficulty": 1
+      },
+      {
+        "content": "저녁 밥량 2숟가락 줄이기",
+        "description": "집 식사에서 밥을 평소보다 2숟가락 덜 먹기",
+        "difficulty": 1
+      },
+      {
+        "content": "간식 대신 무가당 차 마시기",
+        "description": "집에서 야식 대신 무가당 차 1컵 마시기",
+        "difficulty": 1
+      },
+      {
+        "content": "퇴근 후 매트에 누워 무릎 굽히기",
+        "description": "집 매트에서 무릎 굽혀 10회 천천히 하기",
+        "difficulty": 1
+      },
+      {
+        "content": "덤벨로 제자리 팔굽 올리기",
+        "description": "집 덤벨을 들고 팔굽 10회씩 2세트 하기",
+        "difficulty": 1
+      },
+      {
+        "content": "의자에 앉아 덤벨 컬 15회",
+        "description": "집 의자에서 덤벨 컬 15회씩 2세트 하기",
+        "difficulty": 2
+      },
+      {
+        "content": "벽 짚고 스쿼트 12회 하기",
+        "description": "집 벽 앞에서 반 스쿼트 12회씩 3세트 하기",
+        "difficulty": 2
+      },
+      {
+        "content": "매트에서 글루트 브리지 15회",
+        "description": "집 매트에서 엉덩이 들기 15회씩 3세트 하기",
+        "difficulty": 2
+      },
+      {
+        "content": "제자리 걷기 8분 이어가기",
+        "description": "집 거실에서 제자리 걷기 8분 연속 하기",
+        "difficulty": 2
+      },
+      {
+        "content": "덤벨로 상체 당기기 12회",
+        "description": "집 매트 옆에서 덤벨 로우 12회씩 3세트 하기",
+        "difficulty": 2
+      },
+      {
+        "content": "퇴근 직후 하체 서킷 15분",
+        "description": "집 매트에서 스쿼트와 브리지 3종 15분 하기",
+        "difficulty": 3
+      },
+      {
+        "content": "덤벨 전신 회로 16분 하기",
+        "description": "집 거실에서 덤벨 4동작을 16분 순환하기",
+        "difficulty": 3
+      },
+      {
+        "content": "저녁 식사 후 빠른 걷기 18분",
+        "description": "집 근처에서 식후 빠른 걷기 18분 하기",
+        "difficulty": 3
+      },
+      {
+        "content": "매트 코어와 하체 20분",
+        "description": "집 매트에서 코어와 하체 20분 연속 하기",
+        "difficulty": 3
+      },
+      {
+        "content": "퇴근 후 덤벨 전신 20분",
+        "description": "집에서 덤벨 전신 동작 4개를 20분 하기",
+        "difficulty": 3
+      }
+    ],
+    "source": "natural pilot 20261011-172739; synthetic profile; single initial call, retry feedback never used",
+    "model": "gpt-5.4-mini-2026-03-17"
+  },
+  {
+    "case": "stock",
+    "feedbackEnabled": true,
+    "apiCalls": 1,
+    "passed": true,
+    "costUsd": "0.0031707",
+    "missions": [
+      {
+        "content": "보유 5종목 손익률 적기",
+        "description": "증권 앱에서 보유 5종목 손익률을 각각 적기",
+        "difficulty": 1
+      },
+      {
+        "content": "보유 5종목 수량 적기",
+        "description": "증권 앱에서 보유 5종목 수량을 각각 적기",
+        "difficulty": 1
+      },
+      {
+        "content": "보유 5종목 평균단가 적기",
+        "description": "증권 앱에서 보유 5종목 평균단가를 각각 적기",
+        "difficulty": 1
+      },
+      {
+        "content": "보유 5종목 현재가 적기",
+        "description": "증권 앱에서 보유 5종목 현재가를 각각 적기",
+        "difficulty": 1
+      },
+      {
+        "content": "보유 5종목 평가금액 적기",
+        "description": "증권 앱에서 보유 5종목 평가금액을 각각 적기",
+        "difficulty": 1
+      },
+      {
+        "content": "손익률 상위 2종목 계산",
+        "description": "계산기로 보유 5종목 중 손익률 상위 2개를 계산하기",
+        "difficulty": 2
+      },
+      {
+        "content": "손실 종목 수익률 합계 계산",
+        "description": "계산기로 보유 손실 종목의 수익률 합계를 계산하기",
+        "difficulty": 2
+      },
+      {
+        "content": "보유 5종목 총평가금액 계산",
+        "description": "계산기로 보유 5종목 평가금액을 합산해 적기",
+        "difficulty": 2
+      },
+      {
+        "content": "종목별 목표수익률 차이 계산",
+        "description": "계산기로 보유 5종목의 목표수익률 차이를 적기",
+        "difficulty": 2
+      },
+      {
+        "content": "보유 5종목 손실률 비교",
+        "description": "증권 앱에서 보유 5종목 손실률을 비교해 적기",
+        "difficulty": 2
+      },
+      {
+        "content": "실적 1종목 손익 추세 읽기",
+        "description": "증권 앱에서 보유 1종목 실적 5분 읽고 숫자 적기",
+        "difficulty": 3
+      },
+      {
+        "content": "재무제표 1종목 매출 읽기",
+        "description": "증권 앱에서 보유 1종목 매출 3년 수치를 읽기",
+        "difficulty": 3
+      },
+      {
+        "content": "재무제표 1종목 영업이익 읽기",
+        "description": "증권 앱에서 보유 1종목 영업이익 3년 수치를 읽기",
+        "difficulty": 3
+      },
+      {
+        "content": "보유 1종목 PER 확인하기",
+        "description": "증권 앱에서 보유 1종목 PER 수치를 읽고 적기",
+        "difficulty": 3
+      },
+      {
+        "content": "보유 1종목 부채비율 확인",
+        "description": "증권 앱에서 보유 1종목 부채비율 수치를 적기",
+        "difficulty": 3
+      }
+    ],
+    "source": "natural pilot 20261011-172739; synthetic profile; single initial call, retry feedback never used",
+    "model": "gpt-5.4-mini-2026-03-17"
+  }
+]
