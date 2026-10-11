@@ -67,7 +67,8 @@ object GeneratedMissionValidator {
      */
     fun hasValidDifficultyDistribution(missions: List<ParsedMission>): Boolean {
         val grouped = missions.groupBy { it.difficulty }
-        return grouped[1]?.size == MISSIONS_PER_DIFFICULTY &&
+        return missions.size == MISSIONS_PER_DIFFICULTY * 3 &&
+            grouped[1]?.size == MISSIONS_PER_DIFFICULTY &&
             grouped[2]?.size == MISSIONS_PER_DIFFICULTY &&
             grouped[3]?.size == MISSIONS_PER_DIFFICULTY
     }
