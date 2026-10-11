@@ -8,9 +8,11 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.haruUp.global.openai.OpenAiApiClient
 import com.haruUp.global.openai.OpenAiUsageContext
 import com.haruUp.global.openai.OpenAiUsageTracking
+import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.infrastructure.MemberMissionRepository
 import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -39,15 +41,24 @@ class MissionRetryFeedbackEvaluationTest {
 
     @Test
     fun `compare baseline and retry feedback on three synthetic goals`() {
+        assumeTrue(System.getProperty("mission.retry.eval.mode", "natural") == "natural")
+        val client = createClient()
+        compareNatural(client)
+    }
+
+    private fun createClient(): OpenAiApiClient {
         val key = System.getenv("OPENAI_API_KEY")?.takeIf { it.isNotBlank() }
             ?: javaClass.classLoader.getResourceAsStream("env.properties")?.use {
                 Properties().apply { load(it) }.getProperty("OPENAI_API_KEY")?.takeIf(String::isNotBlank)
             } ?: error("기존 API 키가 설정되어 있지 않습니다.")
         val factory = SimpleClientHttpRequestFactory().apply { setConnectTimeout(15_000); setReadTimeout(90_000) }
-        val client = OpenAiApiClient(RestClient.builder().baseUrl("https://api.openai.com/v1")
+        return OpenAiApiClient(RestClient.builder().baseUrl("https://api.openai.com/v1")
             .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer $key")
             .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
             .requestFactory(factory).build(), usageEnvironment = "evaluation")
+    }
+
+    private fun compareNatural(client: OpenAiApiClient) {
         val logger = LoggerFactory.getLogger(OpenAiUsageTracking::class.java) as Logger
         val serviceLogger = LoggerFactory.getLogger(GoalBasedMissionGenerationService::class.java) as Logger
         val previousLevel = serviceLogger.level
@@ -111,6 +122,61 @@ class MissionRetryFeedbackEvaluationTest {
             appender.stop()
             serviceLogger.level = previousLevel
             println("missionRetryEval report: ${folder.path}")
+        }
+    }
+
+    @Test
+    fun `compare one controlled retry on the same seeded length failure`() {
+        assumeTrue(System.getProperty("mission.retry.eval.mode", "natural") == "controlled")
+        val seedFolder = File("build/mission-retry-eval").listFiles().orEmpty()
+            .filter { !it.name.startsWith("controlled-") && File(it, "results.json").isFile }
+            .maxByOrNull { it.name } ?: error("먼저 natural 평가의 결과를 확보하세요.")
+        val seedRows = mapper.readTree(File(seedFolder, "results.json"))
+        val client = createClient()
+        val logger = LoggerFactory.getLogger(OpenAiUsageTracking::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().also { it.start(); logger.addAppender(it) }
+        val folder = File("build/mission-retry-eval/controlled-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")))
+        folder.mkdirs()
+        val rows = mutableListOf<Map<String, Any?>>()
+        try {
+            for ((index, case) in cases.withIndex()) {
+                val seed = seedRows.first { it["case"].asText() == case.id && !it["feedbackEnabled"].asBoolean() }
+                val missions = seed["missions"].map { ParsedMission(it["content"].asText(), it["description"].asText(), it["difficulty"].asInt()) }
+                    .mapIndexed { i, m -> if (i == 0) m.copy(description = m.description + " 추가 설명".repeat(10)) else m }
+                val failure = GeneratedMissionValidator.validate(missions, emptySet())
+                check(!failure.passed && failure.longDescriptions.isNotEmpty())
+                val base = DailyMissionFromGoalPrompt.buildUserMessage(case.goal, case.context)
+                for (enabled in if (index % 2 == 0) listOf(true, false) else listOf(false, true)) {
+                    val start = appender.list.size
+                    val raw = try {
+                        OpenAiUsageTracking.withContext(OpenAiUsageContext("evaluation_controlled_retry", "controlled-${case.id}-$enabled",
+                            promptVersion = if (enabled) MissionRetryFeedback.PROMPT_VERSION else "baseline-v1")) {
+                            OpenAiUsageTracking.attempt(2) {
+                                client.generateText(base + if (enabled) MissionRetryFeedback.validation(failure) else "",
+                                    DailyMissionFromGoalPrompt.SYSTEM_PROMPT, maxTokens = 4096)
+                            }
+                        }
+                    } catch (e: Exception) { error("API 평가 실패: ${e.javaClass.simpleName}") }
+                    val cleaned = raw.trim().replace(Regex("^```[a-zA-Z]*\\s*"), "").replace(Regex("```\\s*$"), "").trim()
+                    val generated = runCatching { mapper.readTree(cleaned)["missions"].mapNotNull {
+                        val content = it["content"]?.asText()?.trim()
+                        if (content.isNullOrBlank()) null else ParsedMission(content, it["description"]?.asText()?.trim().orEmpty(), it["difficulty"]?.asInt() ?: 1)
+                    } }.getOrDefault(emptyList())
+                    val passed = GeneratedMissionValidator.hasValidDifficultyDistribution(generated) && GeneratedMissionValidator.validate(generated, emptySet()).passed
+                    val event = appender.list.drop(start).map { mapper.readTree(it.formattedMessage.substringAfter("OPENAI_TELEMETRY ")) }
+                        .single { it["event"].asText() == "api_call" }
+                    rows.add(mapOf("case" to case.id, "feedbackEnabled" to enabled, "passed" to passed,
+                        "evaluationKind" to "single_controlled_retry", "syntheticFailure" to "description_length",
+                        "costUsd" to event["estimatedCostUsd"].takeUnless { it.isNull }?.decimalValue()?.toPlainString(),
+                        "model" to event["model"].asText(), "missions" to generated))
+                    mapper.writerWithDefaultPrettyPrinter().writeValue(File(folder, "results.json"), rows)
+                    println("controlledRetryEval ${case.id} feedback=$enabled passed=$passed cost=${event["estimatedCostUsd"]}")
+                }
+            }
+        } finally {
+            File(folder, "telemetry.log").writeText(appender.list.joinToString("\n") { it.formattedMessage })
+            logger.detachAppender(appender); appender.stop()
+            println("controlledRetryEval report: ${folder.path}")
         }
     }
 }

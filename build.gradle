@@ -286,6 +286,7 @@ tasks.register('missionRetryEval', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform { includeTags 'mission-retry-eval' }
+    systemProperty 'mission.retry.eval.mode', findProperty('retryEvalMode') ?: 'natural'
     outputs.upToDateWhen { false }
     testLogging {
         showStandardStreams = true

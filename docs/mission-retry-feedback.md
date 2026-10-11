@@ -36,6 +36,16 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradl
 실행 순서는 목표별로 번갈아 설정하지만 작은 표본과 캐시 차이에 따른 편향을 제거하지는 못한다.
 리포트는 `build/mission-retry-eval/<timestamp>/results.json`과 `telemetry.log`에 저장한다.
 
+동일 실패 조건의 단일 재시도 비교는 기존 자연 생성 보고서의 후보에 설명 길이 오류를
+주입하고, 양쪽에 동일한 목표·상황을 주어 각각 한 번만 요청한다(총 6회). 실행:
+
+```bash
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew missionRetryEval -PretryEvalMode=controlled --offline
+```
+
+실패 사유 전달을 실제로 사용하지만 인위적인 오류이며, 최초 생성 비용이나 전체 재시도 비용은
+포함하지 않는다. 기본 natural 모드와 별도로 실행한다. 결과는 `controlled-<timestamp>`에 저장한다.
+
 비교 기준은 첫 시도 통과, 모든 시도의 합산 비용, 자동 재시도, 최종 검증 통과와 fallback이다.
 출력 토큰만 비교하지 않으며, 비용 미확인 호출이 있으면 전체 비용은 미확인으로 둔다.
 통계적 절감률, 장기 사용자·같은 날 재추천의 중복률, 목표 적합성 전체 평가를 대체하지 않는다.
