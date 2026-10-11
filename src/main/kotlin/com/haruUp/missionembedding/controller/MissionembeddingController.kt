@@ -30,7 +30,7 @@ class MissionembeddingController(
      * 미션 추천 API
      *
      * 등록된 관심사(member_interest)를 기반으로 각 관심사당 미션 5개씩 추천
-     * 챗봇 목표 기반 미션은 memberInterestIds=[0]으로 이미 생성된 오늘의 미션 조회
+     * 챗봇 목표 기반 미션은 memberInterestIds=[0]으로 오늘의 미션 조회 (그날 첫 조회 시 생성)
      * - 사전에 관심사가 등록되어 있어야 함 (/api/interests/member)
      * - 기존 READY 상태 미션은 soft delete 처리
      * - 추천된 미션은 READY 상태로 member_mission에 저장
@@ -54,8 +54,9 @@ class MissionembeddingController(
             }
             ```
 
-            챗봇 완료 후 이미 생성된 오늘의 목표 기반 미션은 다음과 같이 조회합니다.
-            이 요청은 미션을 새로 생성하지 않습니다.
+            챗봇 목표 기반 오늘의 미션은 다음과 같이 조회합니다.
+            오늘 생성된 미션이 하나도 없으면 활성 목표로 그 자리에서 생성해 반환합니다(재추천 횟수 미증가).
+            오늘 이미 생성된 적이 있으면 새로 생성하지 않고 READY 미션만 반환합니다.
             ```json
             {
               "memberInterestIds": [0]

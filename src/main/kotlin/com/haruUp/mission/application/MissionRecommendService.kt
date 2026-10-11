@@ -3,6 +3,8 @@ package com.haruUp.mission.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.category.repository.JobDetailRepository
 import com.haruUp.category.repository.JobJpaRepository
+import com.haruUp.global.openai.OpenAiUsageContext
+import com.haruUp.global.openai.OpenAiUsageTracking
 import com.haruUp.global.prompt.MissionMemberProfile
 import com.haruUp.goal.repository.MemberGoalRepository
 import com.haruUp.interest.repository.InterestEmbeddingJpaRepository
@@ -40,6 +42,7 @@ class MissionRecommendService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val TODAY_RETRY_TTL = Duration.ofHours(24)  // 24시간 후 자동 만료
+    private val GOAL_MISSION_GENERATION_LOCK_TTL = Duration.ofSeconds(60)  // OpenAI 생성 시간보다 넉넉하게
 
     /**
      * 미션 추천 조회
@@ -311,7 +314,12 @@ class MissionRecommendService(
      * - 활성 목표 조회 → 오늘 미션 삭제 후 재생성(하5/중5/상5)
      * - reset_mission_count(관심사) 대신 Redis 재추천 횟수만 증가
      */
-    fun retryWithGoal(memberId: Long): MissionRecommendationResponse {
+    fun retryWithGoal(memberId: Long): MissionRecommendationResponse =
+        OpenAiUsageTracking.withContext(OpenAiUsageContext(feature = "mission_retry")) {
+            retryWithGoalInScope(memberId)
+        }
+
+    private fun retryWithGoalInScope(memberId: Long): MissionRecommendationResponse {
         if (getRetryCount(memberId) >= 5) {
             throw IllegalArgumentException("재추천 횟수 초과: 최대 5회까지 가능합니다.")
         }
@@ -531,12 +539,13 @@ class MissionRecommendService(
      */
     private fun recommendGoalMissions(memberId: Long): MissionRecommendationResponse {
         val goalBasedInterestId = GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID
+        val today = LocalDate.now()
         val memberMissions = memberMissionRepository.findTodayMissions(
             memberId = memberId,
             memberInterestId = goalBasedInterestId,
-            targetDate = LocalDate.now(),
+            targetDate = today,
             statuses = listOf(MissionStatus.READY)
-        )
+        ).ifEmpty { generateTodayGoalMissionsIfAbsent(memberId, today) }
 
         val missionDtos = memberMissions.map { memberMission ->
             com.haruUp.missionembedding.dto.MissionDto(
@@ -562,6 +571,67 @@ class MissionRecommendService(
             totalCount = missionDtos.size,
             retryCount = getRetryCount(memberId)
         )
+    }
+
+    /**
+     * 오늘의 목표 기반 미션이 아직 한 번도 생성되지 않았으면 그 자리에서 생성한다.
+     *
+     * 매일 자정 배치로 미리 만들던 미션을, 그날 처음 추천 화면에 들어온 사용자에 대해서만 만든다.
+     * - 오늘 생성 이력(선택·완료·삭제 포함)이 있으면 생성하지 않는다. 미션을 모두 고른 사용자에게 새 세트를 만들지 않기 위함
+     * - 활성 목표가 없으면 빈 목록
+     * - 동시 요청으로 두 번 생성되지 않도록 Redis 락을 건다
+     * - 재추천 횟수는 증가시키지 않는다
+     */
+    private fun generateTodayGoalMissionsIfAbsent(memberId: Long, today: LocalDate): List<MemberMissionEntity> {
+        val goalBasedInterestId = GoalBasedMissionGenerationService.GOAL_BASED_INTEREST_ID
+
+        val alreadyGeneratedToday = memberMissionRepository.findByMemberIdAndMemberInterestIdAndTargetDate(
+            memberId = memberId,
+            memberInterestId = goalBasedInterestId,
+            targetDate = today
+        ).isNotEmpty()
+        if (alreadyGeneratedToday) return emptyList()
+
+        val activeGoal = memberGoalRepository.findByMemberIdAndIsActiveTrue(memberId) ?: return emptyList()
+
+        val lockKey = MissionRecommendRedisKey.goalMissionGenerationLock(memberId, today)
+        if (!acquireLock(lockKey)) {
+            logger.info("목표 기반 오늘의 미션 생성 중복 요청 무시 - memberId: $memberId")
+            return emptyList()
+        }
+
+        return try {
+            OpenAiUsageTracking.withContext(OpenAiUsageContext(feature = "mission_daily")) {
+                goalBasedMissionGenerationService.generateAndSaveMissions(
+                    memberId = memberId,
+                    goalText = activeGoal.goalText,
+                    conversationSummary = activeGoal.conversationSummary,
+                    conversationRaw = activeGoal.conversationRaw,
+                    goalStartDate = activeGoal.createdAt?.toLocalDate() ?: today
+                )
+            }.also {
+                logger.info("목표 기반 오늘의 미션 첫 조회 생성: ${it.size}개 - memberId: $memberId")
+            }
+        } finally {
+            releaseLock(lockKey)
+        }
+    }
+
+    private fun acquireLock(key: String): Boolean =
+        try {
+            redisTemplate.opsForValue().setIfAbsent(key, "1", GOAL_MISSION_GENERATION_LOCK_TTL) != false
+        } catch (e: Exception) {
+            // Redis 장애 시에도 미션은 보여야 하므로 락 없이 진행한다.
+            logger.error("미션 생성 락 획득 실패 - key: $key, error: ${e.message}")
+            true
+        }
+
+    private fun releaseLock(key: String) {
+        try {
+            redisTemplate.delete(key)
+        } catch (e: Exception) {
+            logger.error("미션 생성 락 해제 실패 - key: $key, error: ${e.message}")
+        }
     }
 
     /**
@@ -693,4 +763,7 @@ object MissionRecommendRedisKey {
 
     fun recommendedContents(memberId: Long, memberInterestId: Long, date: LocalDate) =
         "today-mission:contents:$memberId:$memberInterestId:$date"
+
+    fun goalMissionGenerationLock(memberId: Long, date: LocalDate) =
+        "goal-mission:generation-lock:$memberId:$date"
 }

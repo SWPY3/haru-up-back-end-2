@@ -2,6 +2,7 @@ package com.haruUp.mission.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.haruUp.global.openai.OpenAiApiClient
+import com.haruUp.global.openai.OpenAiUsageTracking
 import com.haruUp.global.prompt.DailyMissionFromGoalPrompt
 import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
@@ -105,7 +106,9 @@ class GoalBasedMissionGenerationService(
         conversationContext: String,
         goalStartDate: LocalDate,
         pastMissions: List<String>
-    ): List<ParsedMission> {
+    ): List<ParsedMission> = OpenAiUsageTracking.operation(
+        OpenAiUsageTracking.current()?.feature?.takeIf { it.startsWith("mission_") } ?: "mission_generation"
+    ) {
         val pastMissionSet = pastMissions.toSet()
 
         // 목표 시작일로부터 오늘이 몇 일차인지 계산 (최소 1일차)
@@ -118,53 +121,67 @@ class GoalBasedMissionGenerationService(
         // 난이도 분포는 맞지만 description 글자수만 미달인 결과 (전부 실패 시 fallback으로 사용)
         var fallbackMissions: List<ParsedMission>? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
-            try {
-                val rawResponse = openAiApiClient.generateText(
-                    userMessage = userMessage,
-                    systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
-                    model = OpenAiApiClient.MODEL_DEFAULT,
-                    temperature = 0.5,
-                    maxTokens = MISSION_GENERATION_MAX_TOKENS
-                ).trim()
+            OpenAiUsageTracking.attempt(attempt + 1) {
+                try {
+                    val rawResponse = openAiApiClient.generateText(
+                        userMessage = userMessage,
+                        systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
+                        model = OpenAiApiClient.MODEL_DEFAULT,
+                        temperature = 0.5,
+                        maxTokens = MISSION_GENERATION_MAX_TOKENS
+                    ).trim()
 
-                val missions = parseMissions(rawResponse)
+                    val missions = parseMissions(rawResponse)
 
-                if (GeneratedMissionValidator.hasValidDifficultyDistribution(missions)) {
-                    val result = GeneratedMissionValidator.validate(missions, pastMissionSet)
+                    if (GeneratedMissionValidator.hasValidDifficultyDistribution(missions)) {
+                        val result = GeneratedMissionValidator.validate(missions, pastMissionSet)
 
-                    if (result.passed) {
-                        if (attempt > 0) {
-                            logger.info("미션 검증 통과 (${attempt + 1}번째 시도) - memberId: $memberId")
+                        if (result.passed) {
+                            OpenAiUsageTracking.validation("passed")
+                            if (attempt > 0) {
+                                logger.info("미션 검증 통과 (${attempt + 1}번째 시도) - memberId: $memberId")
+                            }
+                            logGeneratedMissions(memberId, missions)
+                            return missions
                         }
-                        logGeneratedMissions(memberId, missions)
-                        return missions
-                    }
 
-                    // 전부 실패하면 가장 덜 어긋난 결과를 쓰기 위해 위반 수가 적은 쪽을 남긴다
-                    if (fallbackMissions == null ||
-                        GeneratedMissionValidator.countViolations(missions, pastMissionSet) <
-                        GeneratedMissionValidator.countViolations(fallbackMissions!!, pastMissionSet)
-                    ) {
-                        fallbackMissions = missions
+                        // 전부 실패하면 가장 덜 어긋난 결과를 쓰기 위해 위반 수가 적은 쪽을 남긴다
+                        if (fallbackMissions == null ||
+                            GeneratedMissionValidator.countViolations(missions, pastMissionSet) <
+                            GeneratedMissionValidator.countViolations(fallbackMissions!!, pastMissionSet)
+                        ) {
+                            fallbackMissions = missions
+                        }
+                        OpenAiUsageTracking.validation("rejected", buildList {
+                            if (result.shortContents.isNotEmpty() || result.longContents.isNotEmpty()) add("content_length")
+                            if (result.shortDescriptions.isNotEmpty() || result.longDescriptions.isNotEmpty()) add("description_length")
+                            if (result.grammarViolations.isNotEmpty()) add("grammar")
+                            if (result.duplicated.isNotEmpty()) add("duplicate_mission")
+                        })
+                        logViolations(memberId, attempt, result)
+                    } else {
+                        OpenAiUsageTracking.validation("rejected", listOf("difficulty_distribution"))
+                        val grouped = missions.groupBy { it.difficulty }
+                        logger.warn(
+                            "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
+                            "- 기대: 난이도별 ${GeneratedMissionValidator.MISSIONS_PER_DIFFICULTY}개, 실제 " +
+                            "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
+                            "- memberId: $memberId"
+                        )
                     }
-                    logViolations(memberId, attempt, result)
-                } else {
-                    val grouped = missions.groupBy { it.difficulty }
-                    logger.warn(
-                        "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
-                        "- 기대: 난이도별 ${GeneratedMissionValidator.MISSIONS_PER_DIFFICULTY}개, 실제 " +
-                        "하:${grouped[1]?.size ?: 0}개, 중:${grouped[2]?.size ?: 0}개, 상:${grouped[3]?.size ?: 0}개 " +
-                        "- memberId: $memberId"
-                    )
+                } catch (e: Exception) {
+                    OpenAiUsageTracking.validation("rejected", listOf(
+                        if (e is IllegalArgumentException) "parse_error" else "api_or_generation_error"
+                    ))
+                    lastException = e
+                    logger.warn("미션 생성 실패 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) - memberId: $memberId, 오류: ${e.message}")
                 }
-            } catch (e: Exception) {
-                lastException = e
-                logger.warn("미션 생성 실패 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) - memberId: $memberId, 오류: ${e.message}")
             }
         }
 
         // 난이도 분포까지 실패하면 예외, 글자수/문법/중복만 어긋나면 가장 덜 어긋난 결과라도 사용
         fallbackMissions?.let { missions ->
+            OpenAiUsageTracking.validation("fallback")
             logger.warn(
                 "${MAX_MISSION_RETRY}회 시도 후에도 글자수·문법·중복 검증을 통과하지 못해 " +
                 "가장 위반이 적은 결과를 사용합니다 (위반 ${GeneratedMissionValidator.countViolations(missions, pastMissionSet)}건) - memberId: $memberId"
@@ -173,6 +190,7 @@ class GoalBasedMissionGenerationService(
             return missions
         }
 
+        OpenAiUsageTracking.validation("failed")
         throw lastException ?: IllegalStateException(
             "${MAX_MISSION_RETRY}회 시도 후에도 올바른 난이도 분포" +
                 "(난이도별 ${GeneratedMissionValidator.MISSIONS_PER_DIFFICULTY}개)의 미션 생성 실패 - memberId: $memberId"

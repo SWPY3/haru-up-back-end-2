@@ -7,12 +7,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientResponseException
 
 @Component
 class OpenAiApiClient(
     private val openAiRestClient: RestClient,
     @Value("\${openai.api.model:gpt-5.4-mini}")
-    private val defaultModel: String = MODEL_DEFAULT
+    private val defaultModel: String = MODEL_DEFAULT,
+    @Value("\${spring.profiles.active:default}")
+    private val usageEnvironment: String = "default"
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -123,14 +126,34 @@ class OpenAiApiClient(
             text = OpenAiTextConfig()
         )
 
-        val response = openAiRestClient.post()
-            .uri("/responses")
-            .body(request)
-            .retrieve()
-            .body(OpenAiResponsesResponse::class.java)
-            ?: throw OpenAiApiException("OpenAI API response is null.")
-
-        return extractOutputText(response)
+        val scope = OpenAiUsageTracking.current() ?: OpenAiUsageContext()
+        val started = System.nanoTime()
+        var response: OpenAiResponsesResponse? = null
+        var outcome = "failed"
+        var failureReason: String? = null
+        try {
+            response = openAiRestClient.post()
+                .uri("/responses")
+                .body(request)
+                .retrieve()
+                .body(OpenAiResponsesResponse::class.java)
+                ?: throw OpenAiApiException("OpenAI API response is null.")
+            val outputText = extractOutputText(response)
+            outcome = "text_returned"
+            return outputText
+        } catch (e: Exception) {
+            failureReason = when (e) {
+                is RestClientResponseException -> "http_${e.statusCode.value()}"
+                is OpenAiApiException -> "missing_output_text"
+                else -> "transport_or_decode_error"
+            }
+            throw e
+        } finally {
+            OpenAiUsageTracking.record(
+                scope, usageEnvironment, model, response,
+                (System.nanoTime() - started) / 1_000_000, outcome, failureReason
+            )
+        }
     }
 
     // GPT-5 계열 및 o-시리즈(reasoning 모델)는 temperature 파라미터를 지원하지 않음
@@ -192,8 +215,28 @@ data class OpenAiResponsesResponse(
     @JsonProperty("output_text")
     val outputText: String? = null,
     val output: List<OpenAiOutputItem> = emptyList(),
-    val error: OpenAiError? = null
+    val error: OpenAiError? = null,
+    val id: String? = null,
+    val model: String? = null,
+    val status: String? = null,
+    @JsonProperty("service_tier") val serviceTier: String? = null,
+    val usage: OpenAiUsage? = null
 )
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class OpenAiUsage(
+    @JsonProperty("input_tokens") val inputTokens: Long? = null,
+    @JsonProperty("output_tokens") val outputTokens: Long? = null,
+    @JsonProperty("total_tokens") val totalTokens: Long? = null,
+    @JsonProperty("input_tokens_details") val inputTokensDetails: OpenAiInputTokenDetails? = null,
+    @JsonProperty("output_tokens_details") val outputTokensDetails: OpenAiOutputTokenDetails? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class OpenAiInputTokenDetails(@JsonProperty("cached_tokens") val cachedTokens: Long? = null)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class OpenAiOutputTokenDetails(@JsonProperty("reasoning_tokens") val reasoningTokens: Long? = null)
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class OpenAiOutputItem(
