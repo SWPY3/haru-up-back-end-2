@@ -140,7 +140,7 @@ tasks.named('test') {
     // integration 태그는 여기서 제외하지 않는다. 로컬에서는 docker compose 로 DB·Redis 를 띄우고
     // 통합 테스트까지 함께 돌리는 것이 기본이기 때문이다. 인프라 없이 돌리려면 unitTest 를 쓴다.
     useJUnitPlatform {
-        excludeTags 'curation-eval', 'schema-gen', 'flyway-verify'
+        excludeTags 'curation-eval', 'mission-retry-eval', 'schema-gen', 'flyway-verify'
     }
 }
 
@@ -155,7 +155,7 @@ tasks.register('unitTest', Test) {
     classpath = sourceSets.test.runtimeClasspath
 
     useJUnitPlatform {
-        excludeTags 'integration', 'curation-eval', 'schema-gen', 'flyway-verify'
+        excludeTags 'integration', 'curation-eval', 'mission-retry-eval', 'schema-gen', 'flyway-verify'
     }
 
     testLogging {
@@ -271,6 +271,21 @@ tasks.register('curationEval', Test) {
         environment 'OPENAI_MODEL', System.getenv('OPENAI_MODEL')
     }
 
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+        events 'passed', 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+// 미션 실패 사유 전달 비교: 가상 목표 3개 × 기존/변경, 최대 18 API 호출. DB 사용 없음.
+tasks.register('missionRetryEval', Test) {
+    group = 'verification'
+    description = '기존 키로 미션 재시도 실패 사유 전달의 비용·검증 결과를 소규모 비교한다'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'mission-retry-eval' }
     outputs.upToDateWhen { false }
     testLogging {
         showStandardStreams = true

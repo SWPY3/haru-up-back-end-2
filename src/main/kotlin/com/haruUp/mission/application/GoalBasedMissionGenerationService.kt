@@ -8,6 +8,7 @@ import com.haruUp.mission.domain.MemberMissionEntity
 import com.haruUp.mission.domain.MissionStatus
 import com.haruUp.mission.infrastructure.MemberMissionRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -16,13 +17,15 @@ import java.time.temporal.ChronoUnit
 /**
  * 목표 기반 미션 생성 공통 서비스
  * - 챗봇 완료 시 즉시 미션 생성
- * - 매일 자정 배치에서 미션 재생성
+ * - 사용자 요청으로 미션 재추천
  */
 @Service
 class GoalBasedMissionGenerationService(
     private val memberMissionRepository: MemberMissionRepository,
     private val openAiApiClient: OpenAiApiClient,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Value("\${openai.mission.retry-feedback-enabled:false}")
+    private val retryFeedbackEnabled: Boolean = false
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -107,7 +110,8 @@ class GoalBasedMissionGenerationService(
         goalStartDate: LocalDate,
         pastMissions: List<String>
     ): List<ParsedMission> = OpenAiUsageTracking.operation(
-        OpenAiUsageTracking.current()?.feature?.takeIf { it.startsWith("mission_") } ?: "mission_generation"
+        OpenAiUsageTracking.current()?.feature?.takeIf { it.startsWith("mission_") } ?: "mission_generation",
+        promptVersion = if (retryFeedbackEnabled) MissionRetryFeedback.PROMPT_VERSION else "baseline-v1"
     ) {
         val pastMissionSet = pastMissions.toSet()
 
@@ -118,13 +122,14 @@ class GoalBasedMissionGenerationService(
         logger.info("미션 생성 프롬프트 - memberId: $memberId, D+$dayNumber, userMessage:\n$userMessage")
 
         var lastException: Exception? = null
-        // 난이도 분포는 맞지만 description 글자수만 미달인 결과 (전부 실패 시 fallback으로 사용)
+        var retryFeedback = ""
+        // 난이도 분포는 맞지만 길이·문법·중복 기준에 어긋난 결과 (전부 실패 시 fallback으로 사용)
         var fallbackMissions: List<ParsedMission>? = null
         repeat(MAX_MISSION_RETRY) { attempt ->
             OpenAiUsageTracking.attempt(attempt + 1) {
                 try {
                     val rawResponse = openAiApiClient.generateText(
-                        userMessage = userMessage,
+                        userMessage = userMessage + if (retryFeedbackEnabled) retryFeedback else "",
                         systemMessage = DailyMissionFromGoalPrompt.SYSTEM_PROMPT,
                         model = OpenAiApiClient.MODEL_DEFAULT,
                         temperature = 0.5,
@@ -158,9 +163,11 @@ class GoalBasedMissionGenerationService(
                             if (result.grammarViolations.isNotEmpty()) add("grammar")
                             if (result.duplicated.isNotEmpty()) add("duplicate_mission")
                         })
+                        if (retryFeedbackEnabled) retryFeedback = MissionRetryFeedback.validation(result)
                         logViolations(memberId, attempt, result)
                     } else {
                         OpenAiUsageTracking.validation("rejected", listOf("difficulty_distribution"))
+                        if (retryFeedbackEnabled) retryFeedback = MissionRetryFeedback.distribution(missions)
                         val grouped = missions.groupBy { it.difficulty }
                         logger.warn(
                             "미션 난이도 분포 불일치 (시도 ${attempt + 1}/$MAX_MISSION_RETRY) " +
@@ -170,6 +177,8 @@ class GoalBasedMissionGenerationService(
                         )
                     }
                 } catch (e: Exception) {
+                    // Do not treat a transport/API error as a prompt error or send its body to the model.
+                    retryFeedback = if (retryFeedbackEnabled && e is IllegalArgumentException) MissionRetryFeedback.parseFailure() else ""
                     OpenAiUsageTracking.validation("rejected", listOf(
                         if (e is IllegalArgumentException) "parse_error" else "api_or_generation_error"
                     ))
